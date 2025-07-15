@@ -1,0 +1,6 @@
+.env
+.venv
+example_nodes_template/__pycache__/
+**/__pycache__/
+.ruff_cache/
+.vscode/
