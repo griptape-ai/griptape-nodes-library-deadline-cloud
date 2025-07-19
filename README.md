@@ -4,15 +4,19 @@ This library provides Griptape Nodes for interacting with AWS Deadline Cloud API
 
 **IMPORTANT:** To use these nodes, you will need AWS Credentials.
 
-To configure your keys within the Griptape Nodes IDE:
+To configure your settings within the Griptape Nodes IDE:
 
 1. Open the **Settings** menu.
-1. Navigate to the **API Keys & Secrets** panel.
-1. TODO
+1. Navigate to the **Engine Settings** panel.
+1. Configure your:
+   1. Farm ID
+   1. Queue ID
+   1. Region name
+   1. Profile name
 
 ## Add your library to your installed Engine
 
-If you haven't already installed your Griptape Nodes engine, follow the installation steps [HERE](https://github.com/griptape-ai/griptape-nodes).
+If you haven't already installed your Griptape Nodes engine, follow the installation steps from the [griptape-nodes README](https://github.com/griptape-ai/griptape-nodes).
 After you've completed those and you have your engine up and running:
 
 1. Copy the path to your `library.json`. Right click on the file, and `Copy Path` (Not `Copy Relative Path`)

@@ -10,6 +10,12 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+from botocore.exceptions import BotoCoreError, ClientError
+from deadline.client.api import get_queue_user_boto3_session
+from deadline.client.config import get_setting_default
+from deadline.client.config.config_file import get_cache_directory
+from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
+from deadline.job_attachments.upload import S3AssetManager, S3AssetUploader
 from dotenv import set_key
 from dotenv.main import DotEnv
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
@@ -25,12 +31,19 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 from griptape_nodes.retained_mode.events.workflow_events import (
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
+    SaveWorkflowRequest,
+    SaveWorkflowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
 )
-from httpx import Client
-from publish.worklow_builder import WorkflowBuilder
+from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
+from publish.base_deadline_cloud import BaseDeadlineCloud
+from publish.deadline_cloud_job_template_generator import (
+    DeadlineCloudJobTemplateGenerator,
+)
+
+from griptape_nodes_library_deadline_cloud.publish.deadline_cloud_workflow_builder import DeadlineCloudWorkflowBuilder
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -40,18 +53,23 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("deadline_cloud_publisher")
 
-DEADLINE_CLOUD_SERVICE = "Deadline Cloud"
 
-
-class DeadlineCloudPublisher:
+class DeadlineCloudPublisher(BaseDeadlineCloud):
     def __init__(self, workflow_name: str) -> None:
+        super().__init__(session=BaseDeadlineCloud._get_session())
         self._workflow_name = workflow_name
-        self._client = Client()
+        self._job_template: dict[str, Any] = {}
+
+        logger.error(self._session.region_name)
 
     def publish_workflow(self) -> ResultPayload:
         try:
+            # Ensure the workflow file exists
+            self._ensure_workflow_file_exists(self._workflow_name)
+
             # Get the workflow shape
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
@@ -60,43 +78,192 @@ class DeadlineCloudPublisher:
             package_path = self._package_workflow(self._workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
-            # Deploy the workflow to AWS Deadline Cloud
-            self._deploy_workflow_to_cloud(package_path)
+            # Publish the workflow to AWS Deadline Cloud
+            job_attachment_settings, manifests = self._process_job_attachments(package_path)
             logger.info("Workflow '%s' published successfully to AWS Deadline Cloud", self._workflow_name)
 
             # Generate an executor workflow that can invoke the published structure
-            executor_workflow_path = self._generate_executor_workflow(workflow_shape)
+            executor_workflow_path = self._generate_executor_workflow(
+                relative_dir_path=package_path,
+                attachments=manifests,
+                job_attachment_settings=job_attachment_settings,
+                workflow_shape=workflow_shape,
+            )
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
             )
-        except Exception as e:
+        except (ValueError, RuntimeError, ClientError, BotoCoreError) as e:
             details = f"Failed to publish workflow '{self._workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure()
+        except Exception as e:
+            details = f"Unexpected error publishing workflow '{self._workflow_name}': {e}"
+            logger.exception(details)
+            return PublishWorkflowResultFailure()
 
-    @classmethod
-    def _get_config_value(cls, service: str, value: str) -> str:
-        """Retrieves a configuration value from the ConfigManager."""
-        config_value = GriptapeNodes.ConfigManager().get_config_value(f"nodes.{service}.{value}")
-        if not config_value:
-            details = f"Failed to get configuration value '{value}' for service '{service}'."
+    def _ensure_workflow_file_exists(self, workflow_name: str) -> None:
+        """Ensure the workflow file exists in the expected location."""
+        workflow = self._get_or_save_workflow(workflow_name)
+        self._ensure_workflow_file_saved(workflow_name, workflow)
+
+    def _get_or_save_workflow(self, workflow_name: str) -> Workflow:
+        """Get workflow from registry or save it if not found."""
+        try:
+            return WorkflowRegistry.get_workflow_by_name(workflow_name)
+        except KeyError as e:
+            details = f"Workflow '{workflow_name}' not found in registry. Saving workflow."
+            logger.info(details)
+            result = GriptapeNodes.handle_request(
+                SaveWorkflowRequest(
+                    file_name=workflow_name,
+                )
+            )
+            if not isinstance(result, SaveWorkflowResultSuccess):
+                details = f"Failed to save workflow '{workflow_name}' to registry."
+                logger.error(details)
+                raise TypeError(details) from e
+
+            # Try again after saving
+            try:
+                return WorkflowRegistry.get_workflow_by_name(workflow_name)
+            except KeyError as e:
+                details = f"Workflow '{workflow_name}' still not found after save attempt."
+                logger.error(details)
+                raise ValueError(details) from e
+
+    def _ensure_workflow_file_saved(self, workflow_name: str, workflow: Workflow) -> None:
+        """Ensure the workflow file exists on disk."""
+        full_workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+        if not full_workflow_file_path.exists():
+            details = f"Workflow file '{full_workflow_file_path}' does not exist. Saving workflow file."
+            logger.info(details)
+            result = GriptapeNodes.handle_request(
+                SaveWorkflowRequest(
+                    file_name=workflow_name,
+                )
+            )
+            if not isinstance(result, SaveWorkflowResultSuccess):
+                details = f"Failed to save workflow '{workflow_name}' to file system."
+                logger.error(details)
+                raise ValueError(details)
+
+            # Verify file was created
+            if not full_workflow_file_path.exists():
+                details = f"Workflow file '{full_workflow_file_path}' still does not exist after save attempt."
+                logger.error(details)
+                raise ValueError(details)
+
+    def _process_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:
+        """Process job attachments following the official Deadline Cloud pattern."""
+        try:
+            logger.info("Processing job attachments for: %s", package_path)
+
+            logger.debug("Package path exists: %s", Path(package_path).exists())
+            logger.debug("Session region: %s", self._session.region_name)
+            logger.debug("Session profile: %s", getattr(self._session, "profile_name", "default"))
+
+            # Get configuration
+            farm_id = self._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
+            )
+            queue_id = self._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
+            )
+            logger.info("Using farm_id: %s, queue_id: %s", farm_id, queue_id)
+
+            # Initialize Deadline client
+            deadline_client = self._get_client()
+
+            # Get queue information for job attachment settings
+            queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
+            job_attachment_settings = JobAttachmentS3Settings(**queue_response["jobAttachmentSettings"])
+
+            queue_session = get_queue_user_boto3_session(
+                deadline_client,
+                None,
+                farm_id,
+                queue_id,
+            )
+            queue_session._session.set_config_variable("region", self._session.region_name)
+
+            # Set up asset manager and hash cache
+            job_bundle_path = Path(package_path)
+            assets_dir = job_bundle_path / "assets"
+            cache_directory = get_cache_directory()
+
+            s3_asset_manager = S3AssetManager(
+                farm_id=farm_id,
+                queue_id=queue_id,
+                job_attachment_settings=job_attachment_settings,
+                session=queue_session,
+                asset_uploader=S3AssetUploader(
+                    session=queue_session,
+                ),
+            )
+
+            # Prepare paths for upload - expand directory to individual files
+            input_paths = []
+            if assets_dir.is_dir():
+                input_paths.extend(
+                    [
+                        str(file_path)
+                        for file_path in assets_dir.glob("**/*")
+                        if not file_path.is_dir()
+                        and file_path.exists()
+                        and "__pycache__" not in str(file_path)
+                        and ".venv" not in str(file_path)
+                    ]
+                )
+
+            logger.debug("Found %d input files to upload", len(input_paths))
+
+            upload_group = s3_asset_manager.prepare_paths_for_upload(
+                input_paths=input_paths, output_paths=[str(job_bundle_path / "output")], referenced_paths=[]
+            )
+
+            # Hash assets and create manifests following GitHub example pattern
+            logger.info(
+                "Hashing assets and creating manifests for %d files (%d bytes)",
+                upload_group.total_input_files,
+                upload_group.total_input_bytes,
+            )
+            (_, manifests) = s3_asset_manager.hash_assets_and_create_manifest(
+                upload_group.asset_groups,
+                upload_group.total_input_files,
+                upload_group.total_input_bytes,
+                cache_directory,
+            )
+
+            def on_uploading_assets(summary: Any) -> bool:
+                logger.info("Uploading assets: %s", summary)
+                return True
+
+            # Upload assets
+            logger.info("Uploading %d manifests to S3", len(manifests))
+            (upload_summary, attachments) = s3_asset_manager.upload_assets(
+                manifests=manifests,
+                s3_check_cache_dir=cache_directory,
+                on_uploading_assets=on_uploading_assets,
+            )
+
+            logger.info("Upload completed: %s", upload_summary)
+
+        except (ClientError, BotoCoreError) as e:
+            details = f"AWS API error processing job attachments: {e}"
             logger.error(details)
-            raise ValueError(details)
-        return config_value
-
-    @classmethod
-    def _get_secret(cls, secret: str) -> str:
-        """Retrieves a secret value from the SecretsManager."""
-        secret_value = GriptapeNodes.SecretsManager().get_secret(secret)
-        if not secret_value:
-            details = f"Failed to get secret:'{secret}'."
+            raise RuntimeError(details) from e
+        except OSError as e:
+            details = f"File system error processing job attachments: {e}"
             logger.error(details)
-            raise ValueError(details)
-        return secret_value
+            raise RuntimeError(details) from e
+        except Exception as e:
+            details = f"Unexpected error processing job attachments: {e}"
+            logger.exception(details)
+            raise RuntimeError(details) from e
 
-    def _deploy_workflow_to_cloud(self, package_path: str) -> None:
-        pass
+        # Return job attachment settings and manifests for job submission
+        return job_attachment_settings, attachments
 
     def _copy_libraries_to_path_for_workflow(
         self,
@@ -185,7 +352,7 @@ class DeadlineCloudPublisher:
         This is used to create a single .env file for the workflow. We can gather all secrets explicitly defined in the .env file
         and by the settings/SecretsManager, but we will not gather all secrets from the OS env for the purpose of publishing.
         """
-        env_file_dict = {}
+        env_file_dict: dict[str, Any] = {}
         if workspace_env_file_path.exists():
             env_file = DotEnv(workspace_env_file_path)
             env_file_dict = env_file.dict()
@@ -209,161 +376,146 @@ class DeadlineCloudPublisher:
         for key, val in env_file_dict.items():
             set_key(env_file_path, key, str(val))
 
-    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
+    def _get_engine_version_for_workflow(self, workflow: Workflow) -> str:
+        # Get engine version for dependencies
+        engine_version_request = GetEngineVersionRequest()
+        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
+        if not engine_version_result.succeeded():
+            details = f"Failed to get engine version for workflow '{workflow.metadata.name}'"
+            logger.error(details)
+            raise ValueError(details)
+        engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
+        return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
+
+    def _package_workflow(self, workflow_name: str) -> str:
+        """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
         workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
 
-        engine_version: str = ""
-        engine_version_request = GetEngineVersionRequest()
-        engine_version_result = GriptapeNodes.handle_request(request=engine_version_request)
-        if not engine_version_result.succeeded():
-            details = (
-                f"Attempted to publish workflow '{workflow.metadata.name}', but failed getting the engine version."
+        # Get engine version for dependencies
+        engine_version = self._get_engine_version_for_workflow(workflow)
+
+        # Create temporary directory for packaging
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"{workflow_name}_deadline_bundle_"))
+        job_bundle_dir = temp_dir
+        assets_dir = job_bundle_dir / "assets"
+
+        # Create bundle directory structure
+        assets_dir.mkdir(parents=True)
+
+        try:
+            local_publish_path = Path(__file__).parent
+
+            # 1. Copy workflow and dependencies to assets
+            full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+            shutil.copyfile(full_workflow_file_path, assets_dir / "workflow.py")
+
+            init_file_path = local_publish_path / "__init__.py"
+            shutil.copyfile(init_file_path, assets_dir / "__init__.py")
+
+            deadline_workflow_executor_file_path = local_publish_path / "deadline_cloud_workflow_executor.py"
+            shutil.copyfile(deadline_workflow_executor_file_path, assets_dir / "deadline_cloud_workflow_executor.py")
+
+            # 2. Copy libraries
+            library_paths = self._copy_libraries_to_path_for_workflow(
+                node_libraries=workflow.metadata.node_libraries_referenced,
+                destination_path=assets_dir / "libraries",
+                runtime_env_path=Path("{{Param.LocationToRemap}}/assets/libraries"),
+                workflow=workflow,
             )
-            logger.error(details)
-            raise ValueError(details)
-        engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
-        engine_version = (
-            f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
-        )
 
-        # This is the path where the full workflow will be packaged to in the runtime environment.
-        packaged_top_level_dir = "/structure"
-
-        # Gather the paths to the files we need to copy.
-        # Files are now located in the publish_workflow directory
-        publish_workflow_path = Path(__file__).parent
-        structure_file_path = publish_workflow_path / "structure.py"
-        structure_workflow_executor_file_path = publish_workflow_path / "structure_workflow_executor.py"
-        structure_config_file_path = publish_workflow_path / "structure_config.yaml"
-        pre_build_install_script_path = publish_workflow_path / "pre_build_install_script.sh"
-        post_build_install_script_path = publish_workflow_path / "post_build_install_script.sh"
-        # Note: register_libraries_script.py might need to be created if it doesn't exist
-        register_libraries_script_path = publish_workflow_path / "register_libraries_script.py"
-        full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
-
-        env_file_mapping = self._get_merged_env_file_mapping(secrets_manager.workspace_env_path)
-
-        config = config_manager.user_config
-        config["workspace_directory"] = packaged_top_level_dir
-
-        # Create a temporary directory to perform the packaging
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_dir_path = Path(tmp_dir)
-            temp_workflow_file_path = tmp_dir_path / "workflow.py"
-            temp_structure_path = tmp_dir_path / "structure.py"
-            temp_structure_workflow_executor_path = tmp_dir_path / "structure_workflow_executor.py"
-            temp_pre_build_install_script_path = tmp_dir_path / "pre_build_install_script.sh"
-            temp_post_build_install_script_path = tmp_dir_path / "post_build_install_script.sh"
-            temp_register_libraries_script_path = tmp_dir_path / "register_libraries_script.py"
-            config_file_path = tmp_dir_path / "GriptapeNodes" / "griptape_nodes_config.json"
-            init_file_path = tmp_dir_path / "__init__.py"
-
-            try:
-                # Copy the workflow file, libraries, and structure files to the temporary directory
-                shutil.copyfile(full_workflow_file_path, temp_workflow_file_path)
-                shutil.copyfile(structure_workflow_executor_file_path, temp_structure_workflow_executor_path)
-                shutil.copyfile(pre_build_install_script_path, temp_pre_build_install_script_path)
-                shutil.copyfile(post_build_install_script_path, temp_post_build_install_script_path)
-                shutil.copyfile(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
-
-                # Write the environment variables to the .env file
-                self._write_env_file(tmp_dir_path / ".env", env_file_mapping)
-
-                # Get the library paths
-                library_paths: list[str] = self._copy_libraries_to_path_for_workflow(
-                    node_libraries=workflow.metadata.node_libraries_referenced,
-                    destination_path=tmp_dir_path / "libraries",
-                    runtime_env_path=Path(packaged_top_level_dir) / "libraries",
-                    workflow=workflow,
-                )
-                config["app_events"] = {
-                    "on_app_initialization_complete": {
-                        "workflows_to_register": [],
-                        "libraries_to_register": library_paths,
-                    }
+            # 3. Create configuration
+            config = config_manager.user_config.copy()
+            config["workspace_directory"] = "."
+            config["app_events"] = {
+                "on_app_initialization_complete": {
+                    "workflows_to_register": [],
+                    "libraries_to_register": library_paths,
                 }
-                library_paths_formatted = [f'"{library_path}"' for library_path in library_paths]
+            }
 
-                with register_libraries_script_path.open("r", encoding="utf-8") as register_libraries_script_file:
-                    register_libraries_script_contents = register_libraries_script_file.read()
-                    register_libraries_script_contents = register_libraries_script_contents.replace(
-                        '["REPLACE_LIBRARY_PATHS"]',
-                        f"[{', '.join(library_paths_formatted)}]",
-                    )
-                with temp_register_libraries_script_path.open("w", encoding="utf-8") as register_libraries_script_file:
-                    register_libraries_script_file.write(register_libraries_script_contents)
+            with (assets_dir / "griptape_nodes_config.json").open("w", encoding="utf-8") as config_file:
+                json.dump(config, config_file, indent=2)
 
-                with structure_file_path.open("r", encoding="utf-8") as structure_file:
-                    structure_file_contents = structure_file.read()
-                    structure_file_contents = structure_file_contents.replace(
-                        '["REPLACE_LIBRARIES"]',
-                        f"[{', '.join(library_paths_formatted)}]",
-                    )
-                with temp_structure_path.open("w", encoding="utf-8") as structure_file:
-                    structure_file.write(structure_file_contents)
+            # 4. Create environment file
+            env_file_mapping = self._get_merged_env_file_mapping(secrets_manager.workspace_env_path)
+            self._write_env_file(assets_dir / ".env", env_file_mapping)
 
-                config_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with config_file_path.open("w", encoding="utf-8") as config_file:
-                    config_file.write(json.dumps(config, indent=4))
-
-                init_file_path.parent.mkdir(parents=True, exist_ok=True)
-                with init_file_path.open("w", encoding="utf-8") as init_file:
-                    init_file.write('"""This is a temporary __init__.py file for the structure."""\n')
-
-                shutil.copyfile(config_file_path, tmp_dir_path / "griptape_nodes_config.json")
-
-            except Exception as e:
-                details = f"Failed to copy files to temporary directory. Error: {e}"
-                logger.exception(details)
-                raise
-
-            # Create the requirements.txt file using the correct engine version
+            # 5. Create requirements.txt
             source, commit_id = self.__get_install_source()
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
-            requirements_file_path = tmp_dir_path / "requirements.txt"
-            with requirements_file_path.open("w", encoding="utf-8") as requirements_file:
-                requirements_file.write(
+
+            with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
+                req_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
 
-            archive_base_name = config_manager.workspace_path / workflow_name
-            shutil.make_archive(str(archive_base_name), "zip", tmp_dir)
-            return str(archive_base_name) + ".zip"
+            # 6. Generate Job Template
+            self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
+                job_bundle_dir, workflow_name, library_paths
+            )
 
-    def _generate_executor_workflow(self, workflow_shape: dict[str, Any]) -> Path:
-        """Generate a new workflow file that can execute the published structure.
+            logger.info("Job bundle created at: %s", job_bundle_dir)
+            return str(job_bundle_dir)
 
-        This creates a simple workflow with StartNode -> PublishedWorkflow -> EndNode
+        except OSError as e:
+            details = f"File system error packaging workflow '{workflow_name}': {e}"
+            logger.error(details)
+            raise RuntimeError(details) from e
+        except (ValueError, TypeError) as e:
+            details = f"Configuration error packaging workflow '{workflow_name}': {e}"
+            logger.error(details)
+            raise
+        except Exception as e:
+            details = f"Unexpected error packaging workflow '{workflow_name}': {e}"
+            logger.exception(details)
+            raise RuntimeError(details) from e
+
+    def _generate_executor_workflow(
+        self,
+        relative_dir_path: str,
+        attachments: Attachments,
+        job_attachment_settings: JobAttachmentS3Settings,
+        workflow_shape: dict[str, Any],
+    ) -> Path:
+        """Generate a new workflow file that can execute the published workflow.
+
+        This creates a simple workflow with StartNode -> DeadlineCloudPublishedWorkflow -> EndNode
         that can invoke the published workflow in Deadline Cloud.
 
         Args:
-            workflow_shape: The input/output shape of the original workflow
+            relative_dir_path: The relative directory path to the packaged workflow bundle.
+            attachments: The job attachments to be used in the executor workflow.
+            job_attachment_settings: The job attachment S3 settings for Deadline Cloud.
+            workflow_shape: The input/output shape of the original workflow.
         """
         # Use WorkflowBuilder to generate the executor workflow
         libraries: list[LibraryManager.LibraryInfo] = []
-        if nodes_library := GriptapeNodes.LibraryManager().get_library_info_by_library_name(
-            "AWS Deadline Cloud Library"
-        ):
+        if nodes_library := GriptapeNodes.LibraryManager().get_library_info_by_library_name("Griptape Nodes Library"):
             libraries.append(nodes_library)
         else:
-            details = "AWS Deadline Cloud Library is not available. Cannot generate executor workflow."
+            details = "Griptape Nodes Library is not available. Cannot generate executor workflow."
             logger.error(details)
             raise ValueError(details)
-        if cloud_library := GriptapeNodes.LibraryManager().get_library_info_by_library_name(
+        if deadline_cloud_library := GriptapeNodes.LibraryManager().get_library_info_by_library_name(
             "AWS Deadline Cloud Library"
         ):
-            libraries.append(cloud_library)
+            libraries.append(deadline_cloud_library)
         else:
             details = "AWS Deadline Cloud Library is not available. Cannot generate executor workflow."
             logger.error(details)
             raise ValueError(details)
         library_paths = [library.library_path for library in libraries if library.library_path is not None]
-        builder = WorkflowBuilder(
+        builder = DeadlineCloudWorkflowBuilder(
+            attachments=attachments,
+            job_attachment_settings=job_attachment_settings,
+            job_template=self._job_template,
+            relative_dir_path=relative_dir_path,
             workflow_name=self._workflow_name,
+            workflow_shape=workflow_shape,
             executor_workflow_name=f"{self._workflow_name}_aws_dc_executor",
             libraries=library_paths,
         )
-        return builder.generate_executor_workflow(workflow_shape)
+        return builder.generate_executor_workflow()

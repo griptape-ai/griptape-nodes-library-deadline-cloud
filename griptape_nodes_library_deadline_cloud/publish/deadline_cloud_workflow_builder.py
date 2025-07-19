@@ -8,37 +8,60 @@ import logging
 import subprocess
 import sys
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from publish.deadline_cloud_published_workflow import DeadlineCloudPublishedWorkflow
 
 logger = logging.getLogger(__name__)
 
+LIBRARY_NAME = "AWS Deadline Cloud Library"
 
-class WorkflowBuilder:
+
+class DeadlineCloudWorkflowBuilder:
     """Builder class for generating executor workflows using simple script generation."""
 
-    def __init__(self, workflow_name: str, executor_workflow_name: str, libraries: list[str] | None = None) -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        attachments: Attachments,
+        job_attachment_settings: JobAttachmentS3Settings,
+        job_template: dict[str, Any],
+        relative_dir_path: str,
+        workflow_name: str,
+        workflow_shape: dict[str, Any],
+        executor_workflow_name: str,
+        libraries: list[str] | None = None,
+    ) -> None:
         """Initialize the WorkflowBuilder.
 
         Args:
-            workflow_name: Name of the original workflow that was published
-            executor_workflow_name: Name of the executor workflow to be created
-            libraries: List of libraries needed for the workflow
+            attachments: Attachments object containing job attachments.
+            job_attachment_settings: Settings for job attachment S3 configuration.
+            job_template: The job template to use for the Deadline Cloud job.
+            relative_dir_path: Relative path for the workflow files.
+            workflow_name: Name of the original workflow that was published.
+            workflow_shape: Input/output parameter structure for the workflow.
+            executor_workflow_name: Name of the executor workflow to be created.
+            libraries: List of libraries needed for the workflow.
         """
+        self.attachments = attachments
+        self.job_attachment_settings = job_attachment_settings
+        self.job_template = job_template
+        self.relative_dir_path = relative_dir_path
         self.workflow_name = workflow_name
+        self.workflow_shape = workflow_shape
         self.executor_workflow_name = executor_workflow_name
         self.libraries = libraries or []
 
-    def generate_executor_workflow(self, workflow_shape: dict[str, Any]) -> Path:
-        """Generate an executor workflow that can invoke the published Deadline Cloud job.
-
-        Args:
-            workflow_shape: The input/output shape of the original workflow
-        """
+    def generate_executor_workflow(
+        self,
+    ) -> Path:
+        """Generate an executor workflow that can invoke the published Deadline Cloud job."""
         # Generate a simple workflow creation script using PublishedWorkflow node
-        workflow_script = self._build_simple_workflow_script(workflow_shape, self.libraries)
+        workflow_script = self._build_simple_workflow_script(self.job_template, self.workflow_shape, self.libraries)
 
         # Execute the script in a subprocess to create the workflow
         self._execute_workflow_script(workflow_script)
@@ -77,10 +100,13 @@ class WorkflowBuilder:
 """
         return script
 
-    def _build_simple_workflow_script(self, workflow_shape: dict[str, Any], libraries: list[str]) -> str:  # noqa: C901
+    def _build_simple_workflow_script(  # noqa: C901
+        self, job_template: dict, workflow_shape: dict[str, Any], libraries: list[str]
+    ) -> str:
         """Build a simple workflow creation script using PublishedWorkflow node.
 
         Args:
+            job_template: The job template to use for the Deadline Cloud job
             workflow_shape: Input/output parameter structure
             libraries: List of libraries needed for the workflow
 
@@ -140,11 +166,15 @@ def main():
 
         # Create DeadlineCloudPublishedWorkflow node
         published_wf_response = GriptapeNodes.handle_request(CreateNodeRequest(
-            node_type="DeadlineCloudPublishedWorkflow",
-            specific_library_name="AWS Deadline Cloud Library",
-            node_name="Published Workflow",
+            node_type="{DeadlineCloudPublishedWorkflow.__name__}",
+            specific_library_name="{LIBRARY_NAME}",
+            node_name="AWS Deadline Cloud Published Workflow",
             metadata={{
                 "workflow_shape": {workflow_shape!r},
+                "job_template": {job_template!r},
+                "job_attachment_settings": {asdict(self.job_attachment_settings)!r},
+                "attachments": {self.attachments.to_dict()!r},
+                "relative_dir_path": "{self.relative_dir_path}",
             }},
             initial_setup=True
         ))

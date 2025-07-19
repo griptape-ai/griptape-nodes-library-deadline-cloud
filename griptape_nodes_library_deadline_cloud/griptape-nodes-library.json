@@ -2,12 +2,32 @@
   "name": "AWS Deadline Cloud Library",
   "library_schema_version": "0.2.0",
   "advanced_library_path": "deadline_cloud_library_advanced.py",
+  "settings": [
+    {
+      "description": "Configuration settings for AWS Deadline Cloud",
+      "category": "aws_deadline_cloud_library",
+      "contents": {
+        "farm_id": "",
+        "queue_id": "",
+        "profile_name": "",
+        "region_name": "us-east-1"
+      }
+    }
+  ],
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
     "library_version": "0.41.0",
     "engine_version": "0.41.0",
-    "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"]
+    "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
+    "dependencies": {
+      "pip_dependencies": [
+        "deadline>=0.50.1",
+        "boto3>=1.39.10",
+        "botocore>=1.39.10",
+        "python-dotenv>=1.0.1"
+      ]
+    }
   },
   "categories": [
     {
@@ -15,7 +35,7 @@
         "color": "border-green-500",
         "title": "Deadline Cloud Published Workflows",
         "description": "Deadline Cloud Published Workflows",
-        "icon": "Scale"
+        "icon": "Cloud"
       }
     }
   ],
