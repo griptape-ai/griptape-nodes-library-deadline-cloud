@@ -1,0 +1,53 @@
+{
+  "name": "AWS Deadline Cloud Library",
+  "library_schema_version": "0.2.0",
+  "advanced_library_path": "deadline_cloud_library_advanced.py",
+  "settings": [
+    {
+      "description": "Configuration settings for AWS Deadline Cloud",
+      "category": "aws_deadline_cloud_library",
+      "contents": {
+        "farm_id": "",
+        "queue_id": "",
+        "profile_name": "",
+        "region_name": "us-east-1"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "Griptape",
+    "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
+    "library_version": "0.41.0",
+    "engine_version": "0.41.0",
+    "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
+    "dependencies": {
+      "pip_dependencies": [
+        "deadline>=0.50.1",
+        "boto3>=1.39.10",
+        "botocore>=1.39.10",
+        "python-dotenv>=1.0.1"
+      ]
+    }
+  },
+  "categories": [
+    {
+      "aws_deadline_cloud/published_workflows": {
+        "color": "border-green-500",
+        "title": "Deadline Cloud Published Workflows",
+        "description": "Deadline Cloud Published Workflows",
+        "icon": "Cloud"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "class_name": "DeadlineCloudPublishedWorkflow",
+      "file_path": "publish/deadline_cloud_published_workflow.py",
+      "metadata": {
+        "category": "aws_deadline_cloud/published_workflows",
+        "description": "Node that runs a specific published workflow on AWS Deadline Cloud.",
+        "display_name": "AWS Deadline Cloud Published Workflow"
+      }
+    }
+  ]
+}
