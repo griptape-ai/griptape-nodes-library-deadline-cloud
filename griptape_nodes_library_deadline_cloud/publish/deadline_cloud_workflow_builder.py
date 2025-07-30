@@ -14,7 +14,9 @@ from typing import Any
 
 from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from publish.deadline_cloud_end_flow import DeadlineCloudEndFlow
 from publish.deadline_cloud_published_workflow import DeadlineCloudPublishedWorkflow
+from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +102,7 @@ class DeadlineCloudWorkflowBuilder:
 """
         return script
 
-    def _build_simple_workflow_script(  # noqa: C901
+    def _build_simple_workflow_script(  # noqa: C901, PLR0912
         self, job_template: dict, workflow_shape: dict[str, Any], libraries: list[str]
     ) -> str:
         """Build a simple workflow creation script using PublishedWorkflow node.
@@ -157,9 +159,9 @@ def main():
     with GriptapeNodes.ContextManager().flow(flow_name):
         # Create StartNode
         start_node_response = GriptapeNodes.handle_request(CreateNodeRequest(
-            node_type="StartFlow",
-            specific_library_name="Griptape Nodes Library",
-            node_name="Start Flow",
+            node_type="{DeadlineCloudStartFlow.__name__}",
+            specific_library_name="{LIBRARY_NAME}",
+            node_name="Deadline Cloud Start Flow",
             initial_setup=True
         ))
         start_node_name = start_node_response.node_name
@@ -182,9 +184,9 @@ def main():
 
         # Create EndNode
         end_node_response = GriptapeNodes.handle_request(CreateNodeRequest(
-            node_type="EndFlow",
-            specific_library_name="Griptape Nodes Library",
-            node_name="End Flow",
+            node_type="{DeadlineCloudEndFlow.__name__}",
+            specific_library_name="{LIBRARY_NAME}",
+            node_name="Deadline Cloud End Flow",
             initial_setup=True
         ))
         end_node_name = end_node_response.node_name
@@ -261,6 +263,17 @@ def main():
         script += """
 
     # Create connections between StartNode and DeadlineCloudPublishedWorkflow"""
+
+        # Add connections for submission parameters
+        for param_name in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+            script += f"""
+    GriptapeNodes.handle_request(CreateConnectionRequest(
+        source_node_name=start_node_name,
+        source_parameter_name="{param_name}",
+        target_node_name=published_wf_name,
+        target_parameter_name="{param_name}",
+        initial_setup=True
+    ))"""
 
         # Add connections for each input parameter
         for param in input_params:

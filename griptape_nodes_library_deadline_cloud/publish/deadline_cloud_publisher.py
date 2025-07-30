@@ -42,8 +42,7 @@ from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
     DeadlineCloudJobTemplateGenerator,
 )
-
-from griptape_nodes_library_deadline_cloud.publish.deadline_cloud_workflow_builder import DeadlineCloudWorkflowBuilder
+from publish.deadline_cloud_workflow_builder import DeadlineCloudWorkflowBuilder
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
