@@ -36,6 +36,79 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         self.relative_dir_path = metadata.get("relative_dir_path", "")
         self.workflow_shape = metadata.get("workflow_shape", {})
 
+        with ParameterGroup(name="Job Submission Config") as submission_config_group:
+            Parameter(
+                name="job_name",
+                input_types=["str"],
+                type="str",
+                default_value="",
+                output_type="str",
+                tooltip="The job name for the Deadline Cloud Job.",
+            )
+            Parameter(
+                name="job_description",
+                input_types=["str"],
+                type="str",
+                default_value="",
+                output_type="str",
+                tooltip="The job description for the Deadline Cloud Job.",
+            )
+            Parameter(
+                name="priority",
+                input_types=["int"],
+                type="int",
+                output_type="int",
+                default_value=50,
+                tooltip="The job priority for the Deadline Cloud Job.",
+            )
+            Parameter(
+                name="initial_state",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value="READY",
+                tooltip="The initial state for the Deadline Cloud Job.",
+            )
+            Parameter(
+                name="max_failed_tasks",
+                input_types=["int"],
+                type="int",
+                output_type="int",
+                default_value=50,
+                tooltip="The maximum number of failed tasks before the job is considered failed.",
+            )
+            Parameter(
+                name="max_task_retries",
+                input_types=["int"],
+                type="int",
+                output_type="int",
+                default_value=10,
+                tooltip="The maximum number of task retries before the job is considered failed.",
+            )
+            Parameter(
+                name="farm_id",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=self._get_config_value(
+                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
+                ),
+                tooltip="The farm ID for the Deadline Cloud Job.",
+            )
+            Parameter(
+                name="queue_id",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=self._get_config_value(
+                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
+                ),
+                tooltip="The queue ID for the Deadline Cloud Job.",
+            )
+
+        submission_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
+        self.add_node_element(submission_config_group)
+
         # Add job config group
         with ParameterGroup(name="Job Config") as job_config_group:
             Parameter(
@@ -77,6 +150,20 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
         self.add_node_element(job_config_group)
 
+    @classmethod
+    def get_job_submission_parameter_names(cls) -> list[str]:
+        """Get the names of the job submission parameters."""
+        return [
+            "job_name",
+            "job_description",
+            "priority",
+            "initial_state",
+            "max_failed_tasks",
+            "max_task_retries",
+            "farm_id",
+            "queue_id",
+        ]
+
     def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = super().validate_before_workflow_run() or []
 
@@ -111,10 +198,13 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         """Submit job to Deadline Cloud with processed attachments."""
         try:
             job_template_str = json.dumps(job_template)
-
             deadline_client = self._get_client()
-
             logger.info("Submitting job to farm %s, queue %s", farm_id, queue_id)
+
+            priority = self.get_parameter_value("priority")
+            max_failed_tasks = self.get_parameter_value("max_failed_tasks")
+            max_task_retries = self.get_parameter_value("max_task_retries")
+            initial_state = self.get_parameter_value("initial_state")
 
             # Create job with attachments
             response = deadline_client.create_job(
@@ -123,7 +213,10 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                 template=job_template_str,
                 templateType="JSON",
                 parameters=job_parameters if job_parameters is not None else {},
-                priority=50,  # Default priority
+                priority=priority,
+                maxFailedTasksCount=max_failed_tasks,
+                maxRetriesPerTask=max_task_retries,
+                targetTaskRunStatus=initial_state,
                 attachments=attachments,
             )
 
@@ -263,10 +356,24 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                             self.parameter_output_values[param_name] = param_value
                             logger.info("Set output parameter %s = %s", param_name, param_value)
 
+    def _reconcile_job_template(self, job_template: dict[str, Any]) -> dict[str, Any]:
+        """Reconcile the job template with the parameters."""
+        job_name = self.get_parameter_value("job_name")
+        if job_name:
+            job_template["name"] = job_name
+
+        job_description = self.get_parameter_value("job_description")
+        if job_description:
+            job_template["description"] = job_description
+
+        return job_template
+
     def _process(self) -> None:
         attachments = self.get_parameter_value("attachments")
         job_template = self.get_parameter_value("job_template")
         relative_dir_path = self.get_parameter_value("relative_dir_path")
+        farm_id = self.get_parameter_value("farm_id")
+        queue_id = self.get_parameter_value("queue_id")
 
         # Extract DataDir from attachments manifest (following Deadline Cloud example pattern)
         root_dir = str(attachments["manifests"][0]["rootPath"])
@@ -280,12 +387,8 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             "LocationToRemap": {"path": relative_dir_path},
         }
 
-        farm_id = self._get_config_value(
-            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
-        )
-        queue_id = self._get_config_value(
-            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
-        )
+        # Reconcile job template with parameters
+        job_template = self._reconcile_job_template(job_template)
 
         job_id = self._submit_job_with_attachments(
             attachments=attachments,

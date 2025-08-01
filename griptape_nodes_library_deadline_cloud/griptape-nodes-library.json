@@ -48,6 +48,24 @@
         "description": "Node that runs a specific published workflow on AWS Deadline Cloud.",
         "display_name": "AWS Deadline Cloud Published Workflow"
       }
+    },
+    {
+      "class_name": "DeadlineCloudEndFlow",
+      "file_path": "publish/deadline_cloud_end_flow.py",
+      "metadata": {
+        "category": "aws_deadline_cloud/published_workflows",
+        "description": "Node that defines the end of a workflow and return parameters for a flow executing on AWS Deadline Cloud.",
+        "display_name": "AWS Deadline Cloud End Flow"
+      }
+    },
+    {
+      "class_name": "DeadlineCloudStartFlow",
+      "file_path": "publish/deadline_cloud_start_flow.py",
+      "metadata": {
+        "category": "aws_deadline_cloud/published_workflows",
+        "description": "Node that defines the start of a workflow and passes parameters for a flow on AWS Deadline Cloud.",
+        "display_name": "AWS Deadline Cloud Start Flow"
+      }
     }
   ]
 }

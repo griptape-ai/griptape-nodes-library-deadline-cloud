@@ -58,6 +58,24 @@ class BaseDeadlineCloud:
             raise ValueError(details)
         return secret_value
 
+    @classmethod
+    def _farm_to_name_and_id(cls, farm: Any) -> str:
+        return f"{farm['displayName']} ({farm['farmId']})"
+
+    @classmethod
+    def _queue_to_name_and_id(cls, queue: Any) -> str:
+        return f"{queue['displayName']} ({queue['queueId']})"
+
+    def list_farms(self) -> Any:
+        """List all farms in the Deadline Cloud."""
+        client = self._get_client()
+        return client.list_farms()["farms"]
+
+    def list_queues(self, farm_id: str) -> Any:
+        """List all queues in the Deadline Cloud."""
+        client = self._get_client()
+        return client.list_queues(farmId=farm_id)["queues"]
+
     def _get_client(self) -> BaseClient:
         """Get cached Deadline Cloud client."""
         if self._client is None:
