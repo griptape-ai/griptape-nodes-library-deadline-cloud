@@ -198,15 +198,18 @@ def main():
         for param in input_params:
             # Create a copy and remap 'name' to 'parameter_name'
             param_config = dict(param)
-            param_config["parameter_name"] = param_config.pop("name")
-            script += f"""
-            GriptapeNodes.handle_request(AddParameterToNodeRequest(
-                **{param_config},
-                mode_allowed_input=False,
-                mode_allowed_property=True,
-                mode_allowed_output=True,
-                initial_setup=True
-            ))"""
+            param_name = param_config.pop("name")
+            param_config["parameter_name"] = param_name
+            if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                # Do not double add job submission parameters
+                script += f"""
+                GriptapeNodes.handle_request(AddParameterToNodeRequest(
+                    **{param_config},
+                    mode_allowed_input=False,
+                    mode_allowed_property=True,
+                    mode_allowed_output=True,
+                    initial_setup=True
+                ))"""
 
         script += """
 
