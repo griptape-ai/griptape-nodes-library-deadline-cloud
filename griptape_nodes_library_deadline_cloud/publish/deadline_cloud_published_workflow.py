@@ -9,7 +9,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.config import get_setting_default
 from deadline.job_attachments.download import OutputDownloader
 from deadline.job_attachments.models import JobAttachmentS3Settings
-from griptape_nodes.app.api import get_static_dir
+from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
@@ -269,7 +269,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                     workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
                 elif output_file.startswith("output/staticfiles/"):
                     static_file_path = Path(root_path) / output_file
-                    static_dir = get_static_dir()
+                    static_dir = _build_static_dir()
                     # Copy the static file to the static directory
                     shutil.copy(static_file_path, static_dir / static_file_path.name)
 

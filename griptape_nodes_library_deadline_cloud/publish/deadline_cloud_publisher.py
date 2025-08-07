@@ -24,6 +24,10 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+from griptape_nodes.retained_mode.events.parameter_events import (
+    GetParameterValueRequest,
+    GetParameterValueResultSuccess,
+)
 from griptape_nodes.retained_mode.events.secrets_events import (
     GetAllSecretValuesRequest,
     GetAllSecretValuesResultSuccess,
@@ -36,13 +40,17 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
+    Version,
 )
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
     DeadlineCloudJobTemplateGenerator,
 )
-from publish.deadline_cloud_workflow_builder import DeadlineCloudWorkflowBuilder
+from publish.deadline_cloud_subprocess_executor import (
+    DeadlineCloudSubprocessExecutor,
+)
+from publish.deadline_cloud_workflow_builder import LIBRARY_NAME, DeadlineCloudWorkflowBuilder
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -57,21 +65,28 @@ logger = logging.getLogger("deadline_cloud_publisher")
 
 
 class DeadlineCloudPublisher(BaseDeadlineCloud):
-    def __init__(self, workflow_name: str) -> None:
+    def __init__(
+        self, workflow_name: str, *, execute_on_publish: bool = False, published_workflow_file_name: str | None = None
+    ) -> None:
         super().__init__(session=BaseDeadlineCloud._get_session())
         self._workflow_name = workflow_name
+        self._published_workflow_file_name = published_workflow_file_name or f"{self._workflow_name}_aws_dc_executor"
+        self.execute_on_publish = execute_on_publish
         self._job_template: dict[str, Any] = {}
-
-        logger.error(self._session.region_name)
+        self._create_run_input: dict[str, Any] = {}
+        self._subprocess_executor = DeadlineCloudSubprocessExecutor()
 
     def publish_workflow(self) -> ResultPayload:
         try:
             # Ensure the workflow file exists
-            self._ensure_workflow_file_exists(self._workflow_name)
+            self._validate_workflow(self._workflow_name)
 
             # Get the workflow shape
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
+
+            if self.execute_on_publish:
+                self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
             package_path = self._package_workflow(self._workflow_name)
@@ -89,22 +104,49 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 workflow_shape=workflow_shape,
             )
 
+            if self.execute_on_publish:
+                self._invoke_executor_workflow(executor_workflow_path, self._create_run_input)
+
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
             )
         except (ValueError, RuntimeError, ClientError, BotoCoreError) as e:
             details = f"Failed to publish workflow '{self._workflow_name}'. Error: {e}"
             logger.error(details)
-            return PublishWorkflowResultFailure()
+            return PublishWorkflowResultFailure(
+                exception=e,
+            )
         except Exception as e:
             details = f"Unexpected error publishing workflow '{self._workflow_name}': {e}"
             logger.exception(details)
-            return PublishWorkflowResultFailure()
+            return PublishWorkflowResultFailure(exception=e)
 
-    def _ensure_workflow_file_exists(self, workflow_name: str) -> None:
+    def _invoke_executor_workflow(self, executor_workflow_path: Path, workflow_input: dict[str, Any] | None) -> None:
+        # Execute the script in a background thread without waiting for completion
+        self._subprocess_executor.execute_workflow(executor_workflow_path, workflow_input)
+
+    def _validate_workflow(self, workflow_name: str) -> None:
+        """Validate the workflow before publishing."""
+        workflow = self._ensure_workflow_exists(workflow_name)
+
+        min_supported_version = Version.from_string("0.7.0")
+        if workflow.metadata.schema_version is not None:
+            workflow_version = Version.from_string(workflow.metadata.schema_version)
+            if (
+                workflow_version is not None
+                and min_supported_version is not None
+                and workflow_version < min_supported_version
+                and self.execute_on_publish
+            ):
+                details = f"Workflow '{workflow_name}' has an unsupported schema version for executing on publish: {workflow.metadata.schema_version}. Minimum supported version for {LIBRARY_NAME} is {min_supported_version}. Please re-save the workflow and ensure it has a compatible schema version."
+                logger.error(details)
+                raise ValueError(details)
+
+    def _ensure_workflow_exists(self, workflow_name: str) -> Workflow:
         """Ensure the workflow file exists in the expected location."""
         workflow = self._get_or_save_workflow(workflow_name)
         self._ensure_workflow_file_saved(workflow_name, workflow)
+        return workflow
 
     def _get_or_save_workflow(self, workflow_name: str) -> Workflow:
         """Get workflow from registry or save it if not found."""
@@ -130,6 +172,25 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 details = f"Workflow '{workflow_name}' still not found after save attempt."
                 logger.error(details)
                 raise ValueError(details) from e
+
+    def _gather_deadline_cloud_start_flow_input(self, workflow_shape: dict[str, Any]) -> dict[str, Any]:
+        """Extracts the Deadline Cloud Start Flow input parameters from the workflow."""
+        workflow_input: dict[str, Any] = {"Deadline Cloud Start Flow": {}}
+
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Gather input parameters from the workflow shape
+        for node_name, params in workflow_shape.get("input", {}).items():
+            for param_name in params:
+                request = GetParameterValueRequest(
+                    node_name=node_name,
+                    parameter_name=param_name,
+                )
+                result = node_manager.on_get_parameter_value_request(request=request)
+                if isinstance(result, GetParameterValueResultSuccess):
+                    workflow_input["Deadline Cloud Start Flow"][param_name] = result.value
+
+        return workflow_input
 
     def _ensure_workflow_file_saved(self, workflow_name: str, workflow: Workflow) -> None:
         """Ensure the workflow file exists on disk."""
@@ -514,7 +575,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             relative_dir_path=relative_dir_path,
             workflow_name=self._workflow_name,
             workflow_shape=workflow_shape,
-            executor_workflow_name=f"{self._workflow_name}_aws_dc_executor",
+            executor_workflow_name=self._published_workflow_file_name,
             libraries=library_paths,
         )
         return builder.generate_executor_workflow()

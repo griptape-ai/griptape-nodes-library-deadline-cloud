@@ -11,6 +11,7 @@ To configure your settings within the Griptape Nodes IDE:
 1. Configure your:
    1. Farm ID
    1. Queue ID
+   1. Monitor URL
    1. Region name
    1. Profile name
 

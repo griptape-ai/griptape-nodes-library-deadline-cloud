@@ -21,6 +21,8 @@ def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
 
     publisher = DeadlineCloudPublisher(
         workflow_name=request.workflow_name,
+        execute_on_publish=request.execute_on_publish,
+        published_workflow_file_name=request.published_workflow_file_name,
     )
     logger.info("Publisher: %s", publisher)
     return publisher.publish_workflow()
