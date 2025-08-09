@@ -212,8 +212,8 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.45.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#afe350f2c3706171c5f24f3f41aaa4111bb42245" }
+version = "0.47.0"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#ae37f748b825ad49147cff5cb5dadf7eefe94182" }
 dependencies = [
     { name = "binaryornot" },
     { name = "fastapi" },
