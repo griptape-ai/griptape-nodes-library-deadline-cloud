@@ -36,6 +36,12 @@ class DeadlineCloudStartFlow(StartNode):
                 tooltip="The job description for the Deadline Cloud Job.",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
+
+        job_submission_config_group.ui_options = {"hide": False}
+        self.add_node_element(job_submission_config_group)
+
+        # Add advanced job config group
+        with ParameterGroup(name="Job Submission Config Advanced") as job_submission_config_group_advanced:
             Parameter(
                 name="priority",
                 input_types=["int"],
@@ -95,8 +101,8 @@ class DeadlineCloudStartFlow(StartNode):
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
 
-        job_submission_config_group.ui_options = {"hide": False}
-        self.add_node_element(job_submission_config_group)
+        job_submission_config_group_advanced.ui_options = {"hide": False, "collapsed": True}
+        self.add_node_element(job_submission_config_group_advanced)
 
     def process(self) -> None:
         pass
