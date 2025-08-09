@@ -53,6 +53,7 @@ from publish.deadline_cloud_subprocess_executor import (
 from publish.deadline_cloud_workflow_builder import LIBRARY_NAME, DeadlineCloudWorkflowBuilder
 
 if TYPE_CHECKING:
+    from boto3 import Session
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -214,6 +215,80 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 logger.error(details)
                 raise ValueError(details)
 
+    @classmethod
+    def upload_paths_as_job_attachments(  # noqa: PLR0913
+        cls,
+        input_paths: list[str],
+        output_paths: list[str],
+        farm_id: str,
+        queue_id: str,
+        job_attachment_settings: JobAttachmentS3Settings,
+        queue_session: Session,
+    ) -> Attachments:
+        """Upload specified paths as job attachments and return the attachments."""
+        try:
+            logger.info("Uploading %d input paths as job attachments", len(input_paths))
+
+            # Set up asset manager and hash cache
+            cache_directory = get_cache_directory()
+
+            s3_asset_manager = S3AssetManager(
+                farm_id=farm_id,
+                queue_id=queue_id,
+                job_attachment_settings=job_attachment_settings,
+                session=queue_session,
+                asset_uploader=S3AssetUploader(
+                    session=queue_session,
+                ),
+            )
+
+            logger.debug("Found %d input files to upload", len(input_paths))
+
+            upload_group = s3_asset_manager.prepare_paths_for_upload(
+                input_paths=input_paths, output_paths=output_paths, referenced_paths=[]
+            )
+
+            # Hash assets and create manifests following GitHub example pattern
+            logger.info(
+                "Hashing assets and creating manifests for %d files (%d bytes)",
+                upload_group.total_input_files,
+                upload_group.total_input_bytes,
+            )
+            (_, manifests) = s3_asset_manager.hash_assets_and_create_manifest(
+                upload_group.asset_groups,
+                upload_group.total_input_files,
+                upload_group.total_input_bytes,
+                cache_directory,
+            )
+
+            def on_uploading_assets(summary: Any) -> bool:
+                logger.info("Uploading assets: %s", summary)
+                return True
+
+            # Upload assets
+            logger.info("Uploading %d manifests to S3", len(manifests))
+            (upload_summary, attachments) = s3_asset_manager.upload_assets(
+                manifests=manifests,
+                s3_check_cache_dir=cache_directory,
+                on_uploading_assets=on_uploading_assets,
+            )
+
+            logger.info("Upload completed: %s", upload_summary)
+            return attachments  # noqa: TRY300
+
+        except (ClientError, BotoCoreError) as e:
+            details = f"AWS API error uploading job attachments: {e}"
+            logger.error(details)
+            raise RuntimeError(details) from e
+        except OSError as e:
+            details = f"File system error uploading job attachments: {e}"
+            logger.error(details)
+            raise RuntimeError(details) from e
+        except Exception as e:
+            details = f"Unexpected error uploading job attachments: {e}"
+            logger.exception(details)
+            raise RuntimeError(details) from e
+
     def _process_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:
         """Process job attachments following the official Deadline Cloud pattern."""
         try:
@@ -250,17 +325,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             # Set up asset manager and hash cache
             job_bundle_path = Path(package_path)
             assets_dir = job_bundle_path / "assets"
-            cache_directory = get_cache_directory()
-
-            s3_asset_manager = S3AssetManager(
-                farm_id=farm_id,
-                queue_id=queue_id,
-                job_attachment_settings=job_attachment_settings,
-                session=queue_session,
-                asset_uploader=S3AssetUploader(
-                    session=queue_session,
-                ),
-            )
 
             # Prepare paths for upload - expand directory to individual files
             input_paths = []
@@ -276,38 +340,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     ]
                 )
 
-            logger.debug("Found %d input files to upload", len(input_paths))
-
-            upload_group = s3_asset_manager.prepare_paths_for_upload(
-                input_paths=input_paths, output_paths=[str(job_bundle_path / "output")], referenced_paths=[]
+            # Use the classmethod to handle the actual upload
+            attachments = self.upload_paths_as_job_attachments(
+                input_paths=input_paths,
+                output_paths=[str(job_bundle_path / "output")],
+                farm_id=farm_id,
+                queue_id=queue_id,
+                job_attachment_settings=job_attachment_settings,
+                queue_session=queue_session,
             )
-
-            # Hash assets and create manifests following GitHub example pattern
-            logger.info(
-                "Hashing assets and creating manifests for %d files (%d bytes)",
-                upload_group.total_input_files,
-                upload_group.total_input_bytes,
-            )
-            (_, manifests) = s3_asset_manager.hash_assets_and_create_manifest(
-                upload_group.asset_groups,
-                upload_group.total_input_files,
-                upload_group.total_input_bytes,
-                cache_directory,
-            )
-
-            def on_uploading_assets(summary: Any) -> bool:
-                logger.info("Uploading assets: %s", summary)
-                return True
-
-            # Upload assets
-            logger.info("Uploading %d manifests to S3", len(manifests))
-            (upload_summary, attachments) = s3_asset_manager.upload_assets(
-                manifests=manifests,
-                s3_check_cache_dir=cache_directory,
-                on_uploading_assets=on_uploading_assets,
-            )
-
-            logger.info("Upload completed: %s", upload_summary)
 
         except (ClientError, BotoCoreError) as e:
             details = f"AWS API error processing job attachments: {e}"

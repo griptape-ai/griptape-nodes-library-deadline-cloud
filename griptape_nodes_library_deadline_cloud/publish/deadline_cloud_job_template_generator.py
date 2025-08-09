@@ -41,10 +41,11 @@ class DeadlineCloudJobTemplateGenerator:
 
         parameter_definitions.append(
             {
-                "name": "Input",
-                "type": "STRING",
-                "description": "Input json for the workflow",
-                "default": "{}",
+                "name": "InputFile",
+                "type": "PATH",
+                "objectType": "FILE",
+                "dataFlow": "IN",
+                "description": "Path to JSON file containing input for the workflow",
             }
         )
 
@@ -89,8 +90,8 @@ echo 'Virtual environment setup complete.'
                                 "command": "python",
                                 "args": [
                                     "{{Task.File.Run}}",
-                                    "--input",
-                                    "{{Param.Input}}",
+                                    "--input-file",
+                                    "{{Param.InputFile}}",
                                     "--data-dir",
                                     "{{Param.LocationToRemap}}/assets",
                                 ],
@@ -163,10 +164,9 @@ from workflow import execute_workflow  # type: ignore[attr-defined]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-i",
-        "--input",
+        "--input-file",
         default=None,
-        help="The input to the flow",
+        help="Path to JSON file containing input for the workflow",
     )
     parser.add_argument(
         "--data-dir",
@@ -175,13 +175,19 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    flow_input = args.input
+    input_file_path = args.input_file
     data_dir = Path(args.data_dir)
 
     try:
-        flow_input = json.loads(flow_input) if flow_input else {{}}
+        if input_file_path:
+            with open(input_file_path, 'r', encoding='utf-8') as f:
+                flow_input = json.load(f)
+            logger.info("Loaded input from file: %s", input_file_path)
+        else:
+            flow_input = {{}}
+            logger.info("No input file provided, using empty input")
     except Exception as e:
-        msg = f"Error decoding JSON input: {{e}}"
+        msg = f"Error reading JSON input file: {{e}}"
         logger.info(msg)
         raise
 

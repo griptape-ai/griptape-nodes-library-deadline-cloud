@@ -1,11 +1,13 @@
 import json
 import logging
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
+from deadline.client.api import get_queue_user_boto3_session
 from deadline.client.config import get_setting_default
 from deadline.job_attachments.download import OutputDownloader
 from deadline.job_attachments.models import JobAttachmentS3Settings
@@ -368,6 +370,72 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
 
         return job_template
 
+    def _upload_input_json_to_s3(self, input_json: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        """Upload input JSON to S3 as a job attachment and return the relative path."""
+        try:
+            from publish.deadline_cloud_publisher import DeadlineCloudPublisher
+
+            temp_dir = Path(tempfile.mkdtemp(prefix="input_json_"))
+            input_json_path = temp_dir / "input.json"
+
+            with input_json_path.open("w", encoding="utf-8") as f:
+                json.dump(input_json, f, indent=2)
+
+            logger.info("Created input JSON file at: %s", input_json_path)
+
+            farm_id = self.get_parameter_value("farm_id")
+            queue_id = self.get_parameter_value("queue_id")
+            deadline_client = self._get_client()
+
+            queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
+            job_attachment_settings = JobAttachmentS3Settings(**queue_response["jobAttachmentSettings"])
+
+            queue_session = get_queue_user_boto3_session(
+                deadline_client,
+                None,
+                farm_id,
+                queue_id,
+            )
+            queue_session._session.set_config_variable("region", self._session.region_name)
+
+            input_attachments = DeadlineCloudPublisher.upload_paths_as_job_attachments(
+                input_paths=[str(input_json_path)],
+                output_paths=[],
+                farm_id=farm_id,
+                queue_id=queue_id,
+                job_attachment_settings=job_attachment_settings,
+                queue_session=queue_session,
+            )
+
+            logger.info("Input JSON uploaded successfully to S3")
+
+            # Return the relative path and the attachments
+            return str(input_json_path), input_attachments.to_dict()
+        except Exception as e:
+            details = f"Error uploading input JSON to S3: {e}"
+            logger.error(details)
+            raise RuntimeError(details) from e
+
+    def _combine_attachments(
+        self, original_attachments: dict[str, Any], input_attachments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Combine original workflow attachments with input JSON attachments."""
+        combined = original_attachments.copy()
+
+        # Add the input JSON manifest to the existing manifests
+        if input_attachments.get("manifests"):
+            if "manifests" not in combined:
+                combined["manifests"] = []
+            combined["manifests"].extend(input_attachments["manifests"])
+
+        logger.info(
+            "Combined %d original manifests with %d input manifests",
+            len(original_attachments.get("manifests", [])),
+            len(input_attachments.get("manifests", [])),
+        )
+
+        return combined
+
     def _process(self) -> None:
         attachments = self.get_parameter_value("attachments")
         job_template = self.get_parameter_value("job_template")
@@ -375,23 +443,25 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         farm_id = self.get_parameter_value("farm_id")
         queue_id = self.get_parameter_value("queue_id")
 
-        # Extract DataDir from attachments manifest (following Deadline Cloud example pattern)
         root_dir = str(attachments["manifests"][0]["rootPath"])
-
-        # Collect input parameters and construct JSON for structure run
         input_json = self._collect_input_parameters()
 
+        # Upload input JSON to S3 to avoid parameter size limits
+        logger.info("Uploading input JSON to S3 to avoid parameter size limits")
+        input_json_path, input_attachments = self._upload_input_json_to_s3(input_json)
+
+        # Combine the original attachments with the input JSON attachments
+        combined_attachments = self._combine_attachments(attachments, input_attachments)
+
         job_parameters = {
-            "Input": {"string": json.dumps(input_json)},
+            "InputFile": {"path": input_json_path},
             "DataDir": {"path": root_dir},
             "LocationToRemap": {"path": relative_dir_path},
         }
 
-        # Reconcile job template with parameters
         job_template = self._reconcile_job_template(job_template)
-
         job_id = self._submit_job_with_attachments(
-            attachments=attachments,
+            attachments=combined_attachments,
             farm_id=farm_id,
             queue_id=queue_id,
             job_template=job_template,
@@ -410,6 +480,11 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             queue_id=queue_id,
         )
         self._map_output_parameters(output)
+
+        input_path = Path(input_json_path)
+        if input_path.exists():
+            input_path.unlink(missing_ok=True)
+            shutil.rmtree(input_path.parent, ignore_errors=True)
 
     def process(
         self,
