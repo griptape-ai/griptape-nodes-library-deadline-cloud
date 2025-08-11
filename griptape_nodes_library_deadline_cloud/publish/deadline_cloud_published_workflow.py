@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import shutil
@@ -420,7 +421,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         self, original_attachments: dict[str, Any], input_attachments: dict[str, Any]
     ) -> dict[str, Any]:
         """Combine original workflow attachments with input JSON attachments."""
-        combined = original_attachments.copy()
+        combined = copy.deepcopy(original_attachments)
 
         # Add the input JSON manifest to the existing manifests
         if input_attachments.get("manifests"):
