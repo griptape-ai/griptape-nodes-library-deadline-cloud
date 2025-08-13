@@ -94,11 +94,11 @@ class DeadlineCloudWorkflowBuilder:
         for i, lib in enumerate(libraries):
             if lib.endswith(".json"):
                 script += f"""
-    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path="{lib}"))
+    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path={lib!r}))
 """
             else:
                 script += f"""
-    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier="{lib}"))
+    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier={lib!r}))
 """
         return script
 
@@ -176,7 +176,7 @@ def main():
                 "job_template": {job_template!r},
                 "job_attachment_settings": {asdict(self.job_attachment_settings)!r},
                 "attachments": {self.attachments.to_dict()!r},
-                "relative_dir_path": "{self.relative_dir_path}",
+                "relative_dir_path": {self.relative_dir_path!r},
             }},
             initial_setup=True
         ))
