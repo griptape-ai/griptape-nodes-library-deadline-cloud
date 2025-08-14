@@ -114,7 +114,7 @@ echo 'Virtual environment setup complete.'
     @staticmethod
     def _generate_python_execution_script(library_paths: list[str]) -> str:
         """Generate the Python script that will execute the Griptape workflow."""
-        library_paths_str = ", ".join(f'"{path}"' for path in library_paths)
+        library_paths_str = ", ".join(repr(path) for path in library_paths)
 
         return f"""import argparse
 import json
