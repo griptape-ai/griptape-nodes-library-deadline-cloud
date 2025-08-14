@@ -400,7 +400,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 dest = destination_path / common_root.name
                 shutil.copytree(common_root, dest, dirs_exist_ok=True)
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
-                library_paths.append(str(runtime_env_path / common_root.name / library_path_relative_to_common_root))
+                library_paths.append(
+                    (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
+                )
             else:
                 library_paths.append(library.library_path)
 
