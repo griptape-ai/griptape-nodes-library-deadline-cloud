@@ -129,7 +129,7 @@ from dotenv import load_dotenv
 from griptape_nodes.app.api import start_api
 from griptape_nodes.app.app import _build_static_dir
 
-LIBRARIES = [{library_paths_str}]
+LIBRARIES = [str(Path(path)) for path in [{library_paths_str}]]
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
