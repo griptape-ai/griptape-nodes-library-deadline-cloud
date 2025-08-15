@@ -194,34 +194,50 @@ def main():
         # Configure StartNode parameters
         with GriptapeNodes.ContextManager().node(start_node_name):'''
 
-        # Add parameter configuration for StartNode
-        for param in input_params:
-            # Create a copy and remap 'name' to 'parameter_name'
-            param_config = dict(param)
-            param_name = param_config.pop("name")
-            param_config["parameter_name"] = param_name
-            if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
-                # Do not double add job submission parameters
-                script += f"""
-                GriptapeNodes.handle_request(AddParameterToNodeRequest(
-                    **{param_config},
-                    mode_allowed_input=False,
-                    mode_allowed_property=True,
-                    mode_allowed_output=True,
-                    initial_setup=True
-                ))"""
+        non_deadline_params = [
+            param
+            for param in input_params
+            if param["name"] not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names()
+        ]
+
+        if len(non_deadline_params) == 0:
+            script += """
+            pass
+        """
+        else:
+            # Add parameter configuration for StartNode
+            for param in input_params:
+                # Create a copy and remap 'name' to 'parameter_name'
+                param_config = dict(param)
+                param_name = param_config.pop("name")
+                param_config["parameter_name"] = param_name
+                if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                    # Do not double add job submission parameters
+                    script += f"""
+            GriptapeNodes.handle_request(AddParameterToNodeRequest(
+                **{param_config},
+                mode_allowed_input=False,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True
+            ))"""
 
         script += """
 
         # Configure DeadlineCloudPublishedWorkflow parameters
         with GriptapeNodes.ContextManager().node(published_wf_name):"""
 
-        # Add input parameter configuration for DeadlineCloudPublishedWorkflow
-        for param in input_params:
-            # Create a copy and remap 'name' to 'parameter_name'
-            param_config = dict(param)
-            param_config["parameter_name"] = param_config.pop("name")
-            script += f"""
+        if len(input_params) == 0:
+            script += """
+            pass
+        """
+        else:
+            # Add input parameter configuration for DeadlineCloudPublishedWorkflow
+            for param in input_params:
+                # Create a copy and remap 'name' to 'parameter_name'
+                param_config = dict(param)
+                param_config["parameter_name"] = param_config.pop("name")
+                script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=True,
@@ -230,12 +246,12 @@ def main():
                 initial_setup=True
             ))"""
 
-        # Add output parameter configuration for DeadlineCloudPublishedWorkflow
-        for param in output_params:
-            # Create a copy and remap 'name' to 'parameter_name'
-            param_config = dict(param)
-            param_config["parameter_name"] = param_config.pop("name")
-            script += f"""
+            # Add output parameter configuration for DeadlineCloudPublishedWorkflow
+            for param in output_params:
+                # Create a copy and remap 'name' to 'parameter_name'
+                param_config = dict(param)
+                param_config["parameter_name"] = param_config.pop("name")
+                script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=False,
@@ -249,12 +265,17 @@ def main():
         # Configure EndNode parameters
         with GriptapeNodes.ContextManager().node(end_node_name):"""
 
-        # Add parameter configuration for EndNode
-        for param in output_params:
-            # Create a copy and remap 'name' to 'parameter_name'
-            param_config = dict(param)
-            param_config["parameter_name"] = param_config.pop("name")
-            script += f"""
+        if len(non_deadline_params) == 0:
+            script += """
+            pass
+        """
+        else:
+            # Add parameter configuration for EndNode
+            for param in output_params:
+                # Create a copy and remap 'name' to 'parameter_name'
+                param_config = dict(param)
+                param_config["parameter_name"] = param_config.pop("name")
+                script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=True,
