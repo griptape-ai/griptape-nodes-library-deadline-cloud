@@ -33,7 +33,7 @@ class DeadlineCloudLibraryAdvanced(AdvancedNodeLibrary):
 
     def before_library_nodes_loaded(self, library_data: LibrarySchema, library: Library) -> None:  # noqa: ARG002
         """Called before any nodes are loaded from the library."""
-        msg = f"🚀 Starting to load nodes for '{library_data.name}' library..."
+        msg = f"Starting to load nodes for '{library_data.name}' library..."
         logger.info(msg)
 
     def after_library_nodes_loaded(self, library_data: LibrarySchema, library: Library) -> None:  # noqa: ARG002

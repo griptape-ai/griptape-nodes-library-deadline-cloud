@@ -32,6 +32,7 @@ class DeadlineCloudWorkflowBuilder:
         job_attachment_settings: JobAttachmentS3Settings,
         job_template: dict[str, Any],
         relative_dir_path: str,
+        models_dir_path: str,
         workflow_name: str,
         workflow_shape: dict[str, Any],
         executor_workflow_name: str,
@@ -44,6 +45,7 @@ class DeadlineCloudWorkflowBuilder:
             job_attachment_settings: Settings for job attachment S3 configuration.
             job_template: The job template to use for the Deadline Cloud job.
             relative_dir_path: Relative path for the workflow files.
+            models_dir_path: Path to the directory containing model files.
             workflow_name: Name of the original workflow that was published.
             workflow_shape: Input/output parameter structure for the workflow.
             executor_workflow_name: Name of the executor workflow to be created.
@@ -53,6 +55,7 @@ class DeadlineCloudWorkflowBuilder:
         self.job_attachment_settings = job_attachment_settings
         self.job_template = job_template
         self.relative_dir_path = relative_dir_path
+        self.models_dir_path = models_dir_path
         self.workflow_name = workflow_name
         self.workflow_shape = workflow_shape
         self.executor_workflow_name = executor_workflow_name
@@ -177,6 +180,7 @@ def main():
                 "job_attachment_settings": {asdict(self.job_attachment_settings)!r},
                 "attachments": {self.attachments.to_dict()!r},
                 "relative_dir_path": {self.relative_dir_path!r},
+                "models_dir_path": {self.models_dir_path!r},
             }},
             initial_setup=True
         ))
@@ -210,6 +214,7 @@ def main():
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
                 param_name = param_config.pop("name")
+                param_config.pop("settable", None)  # Remove 'settable' if it exists
                 param_config["parameter_name"] = param_name
                 if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
                     # Do not double add job submission parameters
@@ -237,6 +242,7 @@ def main():
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
                 param_config["parameter_name"] = param_config.pop("name")
+                param_config.pop("settable", None)  # Remove 'settable' if it exists
                 script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
@@ -251,6 +257,7 @@ def main():
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
                 param_config["parameter_name"] = param_config.pop("name")
+                param_config.pop("settable", None)  # Remove 'settable' if it exists
                 script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
@@ -275,6 +282,7 @@ def main():
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
                 param_config["parameter_name"] = param_config.pop("name")
+                param_config.pop("settable", None)  # Remove 'settable' if it exists
                 script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
