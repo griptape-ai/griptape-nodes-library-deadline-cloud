@@ -42,6 +42,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
     Version,
 )
+from huggingface_hub.constants import HF_HOME
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
@@ -100,6 +101,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             # Generate an executor workflow that can invoke the published structure
             executor_workflow_path = self._generate_executor_workflow(
                 relative_dir_path=package_path,
+                models_dir_path=self._get_huggingface_home_dir(),
                 attachments=manifests,
                 job_attachment_settings=job_attachment_settings,
                 workflow_shape=workflow_shape,
@@ -289,6 +291,35 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.exception(details)
             raise RuntimeError(details) from e
 
+    def _get_huggingface_home_dir(self) -> str:
+        """Get the top-level HuggingFace home directory path."""
+        return HF_HOME
+
+    def _get_model_paths(self) -> list[str]:
+        """Get stringified paths to model files from the huggingface_hub cache directory."""
+        try:
+            hf_home = Path(self._get_huggingface_home_dir())
+            model_paths: list[str] = []
+
+            if hf_home.is_dir():
+                model_paths.extend(
+                    [
+                        str(file_path)
+                        for file_path in hf_home.glob("**/*")
+                        if not file_path.is_dir()
+                        and file_path.exists()
+                        and "__pycache__" not in str(file_path)
+                        and ".venv" not in str(file_path)
+                    ]
+                )
+
+            logger.info("Found %d model files in HuggingFace cache", len(model_paths))
+        except Exception as e:
+            logger.warning("Failed to scan HuggingFace cache directory: %s", e)
+            return []
+        else:
+            return model_paths
+
     def _process_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:
         """Process job attachments following the official Deadline Cloud pattern."""
         try:
@@ -306,6 +337,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
             )
             logger.info("Using farm_id: %s, queue_id: %s", farm_id, queue_id)
+            enable_models_as_attachments = self._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "enable_models_as_attachments", default=True
+            )
 
             # Initialize Deadline client
             deadline_client = self._get_client()
@@ -339,6 +373,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                         and ".venv" not in str(file_path)
                     ]
                 )
+
+            # Gather model files for use as input paths
+            if enable_models_as_attachments:
+                model_paths = self._get_model_paths()
+                input_paths.extend(model_paths)
 
             # Use the classmethod to handle the actual upload
             attachments = self.upload_paths_as_job_attachments(
@@ -581,6 +620,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
     def _generate_executor_workflow(
         self,
         relative_dir_path: str,
+        models_dir_path: str,
         attachments: Attachments,
         job_attachment_settings: JobAttachmentS3Settings,
         workflow_shape: dict[str, Any],
@@ -592,6 +632,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
         Args:
             relative_dir_path: The relative directory path to the packaged workflow bundle.
+            models_dir_path: The directory path for HuggingFace model cache location.
             attachments: The job attachments to be used in the executor workflow.
             job_attachment_settings: The job attachment S3 settings for Deadline Cloud.
             workflow_shape: The input/output shape of the original workflow.
@@ -618,6 +659,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             job_attachment_settings=job_attachment_settings,
             job_template=self._job_template,
             relative_dir_path=relative_dir_path,
+            models_dir_path=models_dir_path,
             workflow_name=self._workflow_name,
             workflow_shape=workflow_shape,
             executor_workflow_name=self._published_workflow_file_name,

@@ -11,7 +11,8 @@
         "queue_id": "",
         "monitor_url": "https://my-monitor-name.us-east-1.deadlinecloud.amazonaws.com",
         "profile_name": "",
-        "region_name": "us-east-1"
+        "region_name": "us-east-1",
+        "enable_models_as_attachments": true
       }
     }
   ],
@@ -26,6 +27,7 @@
         "deadline>=0.50.1",
         "boto3>=1.39.10",
         "botocore>=1.39.10",
+        "huggingface-hub>=0.34.4",
         "python-dotenv>=1.0.1"
       ]
     }

@@ -41,6 +41,14 @@ class DeadlineCloudJobTemplateGenerator:
 
         parameter_definitions.append(
             {
+                "name": "ModelsLocationToRemap",
+                "type": "PATH",
+                "description": "Directory path to remap HuggingFace model cache location",
+            }
+        )
+
+        parameter_definitions.append(
+            {
                 "name": "InputFile",
                 "type": "PATH",
                 "objectType": "FILE",
@@ -138,6 +146,9 @@ logger.setLevel(logging.INFO)
 # Set up paths - use DataDir parameter for job attachments
 job_assets_dir = Path("{{{{Param.LocationToRemap}}}}/assets")
 sys.path.insert(0, str(job_assets_dir))
+
+# Set HuggingFace home directory for model cache
+os.environ["HF_HOME"] = "{{{{Param.ModelsLocationToRemap}}}}"
 
 # Load environment variables
 if (job_assets_dir / ".env").exists():

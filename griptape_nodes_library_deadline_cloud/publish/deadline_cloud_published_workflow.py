@@ -37,6 +37,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         self.job_attachment_settings: dict | None = job_attachment_settings_dict
         self.job_template = metadata.get("job_template", {})
         self.relative_dir_path = metadata.get("relative_dir_path", "")
+        self.models_dir_path = metadata.get("models_dir_path", "")
         self.workflow_shape = metadata.get("workflow_shape", {})
 
         with ParameterGroup(name="Job Submission Config") as submission_config_group:
@@ -148,6 +149,15 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                 output_type="str",
                 default_value=self.relative_dir_path,
                 tooltip="Relative path for the workflow files.",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+            Parameter(
+                name="models_dir_path",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=self.models_dir_path,
+                tooltip="Relative path for the models directory.",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         job_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
@@ -270,7 +280,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                     with workflow_file_path.open(encoding="utf-8") as f:
                         workflow_output = json.load(f)
                     workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
-                elif output_file.startswith("output/staticfiles/"):
+                elif "output" in output_file and "staticfiles" in output_file:
                     static_file_path = Path(root_path) / output_file
                     static_dir = _build_static_dir()
                     # Copy the static file to the static directory
@@ -441,6 +451,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         attachments = self.get_parameter_value("attachments")
         job_template = self.get_parameter_value("job_template")
         relative_dir_path = self.get_parameter_value("relative_dir_path")
+        models_dir_path = self.get_parameter_value("models_dir_path")
         farm_id = self.get_parameter_value("farm_id")
         queue_id = self.get_parameter_value("queue_id")
 
@@ -458,6 +469,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             "InputFile": {"path": input_json_path},
             "DataDir": {"path": root_dir},
             "LocationToRemap": {"path": relative_dir_path},
+            "ModelsLocationToRemap": {"path": models_dir_path},
         }
 
         job_template = self._reconcile_job_template(job_template)
