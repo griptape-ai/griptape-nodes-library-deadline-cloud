@@ -1,6 +1,6 @@
 version = 1
-revision = 3
-requires-python = "==3.12.*"
+revision = 2
+requires-python = ">=3.12.0, <3.13"
 
 [[package]]
 name = "annotated-types"
@@ -230,8 +230,8 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.49.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#ed95b52aa87931833c14e47f741d3eb7ed2beadc" }
+version = "0.50.0"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#fdc51c6819fbb44f90bb06f78a512f6828c7fcb7" }
 dependencies = [
     { name = "binaryornot" },
     { name = "fastapi" },

@@ -12,7 +12,7 @@
         "monitor_url": "https://my-monitor-name.us-east-1.deadlinecloud.amazonaws.com",
         "profile_name": "",
         "region_name": "us-east-1",
-        "enable_models_as_attachments": true
+        "enable_models_as_attachments": false
       }
     }
   ],
