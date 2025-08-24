@@ -18,11 +18,18 @@ from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from deadline.job_attachments.upload import S3AssetManager, S3AssetUploader
 from dotenv import set_key
 from dotenv.main import DotEnv
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
+)
+from griptape_nodes.retained_mode.events.flow_events import (
+    GetTopLevelFlowRequest,
+    GetTopLevelFlowResultSuccess,
+    ListNodesInFlowRequest,
+    ListNodesInFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
@@ -124,11 +131,63 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e)
 
+    def _gather_models_for_workflow(self) -> list[str]:
+        flow_manager = GriptapeNodes.FlowManager()
+        get_top_level_flow_result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        if not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess):
+            details = f"Failed to get top-level flow for workflow '{self._workflow_name}'."
+            logger.error(details)
+            raise TypeError(details)
+
+        list_nodes_in_flow_result = flow_manager.on_list_nodes_in_flow_request(
+            ListNodesInFlowRequest(flow_name=get_top_level_flow_result.flow_name)
+        )
+        if not isinstance(list_nodes_in_flow_result, ListNodesInFlowResultSuccess):
+            details = f"Failed to list nodes in flow '{get_top_level_flow_result.flow_name}'."
+            logger.error(details)
+            raise TypeError(details)
+
+        node_names = list_nodes_in_flow_result.node_names
+        huggingface_repo_names = self._get_huggingface_repo_names()
+        models: list[str] = []
+        for node_name in node_names:
+            models.extend(self._get_model_parameters_for_node(node_name, huggingface_repo_names))
+
+        return models
+
+    def _get_model_parameters_for_node(self, node_name: str, huggingface_repo_names: list[str]) -> list[str]:
+        models: list[str] = []
+
+        node_manager = GriptapeNodes.NodeManager()
+
+        object_manager = GriptapeNodes.ObjectManager()
+        node = object_manager.get_object_by_name(node_name)
+        if node is None:
+            details = f"Node '{node_name}' not found."
+            logger.error(details)
+            raise ValueError(details)
+
+        if isinstance(node, BaseNode):
+            parameters = node.parameters
+            for param in parameters:
+                get_param_value_result = node_manager.on_get_parameter_value_request(
+                    GetParameterValueRequest(parameter_name=param.name, node_name=node_name)
+                )
+                if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
+                    details = f"Failed to get parameter value for '{param.name}' in node '{node_name}'."
+                    logger.error(details)
+                    raise TypeError(details)
+                trimmed_value = str(get_param_value_result.value).split(" ")[0]
+                if trimmed_value in huggingface_repo_names:
+                    models.append(trimmed_value)
+
+        return models
+
     def _invoke_executor_workflow(self, executor_workflow_path: Path, workflow_input: dict[str, Any] | None) -> None:
         # Execute the script in a background thread without waiting for completion
         self._subprocess_executor.execute_workflow(executor_workflow_path, workflow_input)
 
-    def _validate_workflow(self, workflow_name: str) -> None:
+    def _validate_workflow(self, workflow_name: str) -> Workflow:
         """Validate the workflow before publishing."""
         workflow = self._ensure_workflow_exists(workflow_name)
 
@@ -144,6 +203,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 details = f"Workflow '{workflow_name}' has an unsupported schema version for executing on publish: {workflow.metadata.schema_version}. Minimum supported version for {LIBRARY_NAME} is {min_supported_version}. Please re-save the workflow and ensure it has a compatible schema version."
                 logger.error(details)
                 raise ValueError(details)
+        return workflow
 
     def _ensure_workflow_exists(self, workflow_name: str) -> Workflow:
         """Ensure the workflow file exists in the expected location."""
@@ -295,28 +355,51 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         """Get the top-level HuggingFace home directory path."""
         return HF_HOME
 
-    def _get_model_paths(self) -> list[str]:
-        """Get stringified paths to model files from the huggingface_hub cache directory."""
+    def _get_huggingface_repo_names(self) -> list[str]:
+        """Get the names of HuggingFace repositories from the huggingface_hub cache directory."""
         try:
-            hf_home = Path(self._get_huggingface_home_dir())
+            from huggingface_hub import scan_cache_dir
+
+            cache_info = scan_cache_dir()
+            return [repo.repo_id for repo in cache_info.repos]
+
+        except Exception as e:
+            logger.warning("Failed to get HuggingFace repo names: %s", e)
+            return []
+
+    def _get_model_paths(self, model_names: list[str]) -> list[str]:
+        """Get stringified paths to model files for specific HuggingFace repositories from cache."""
+        try:
+            from huggingface_hub import scan_cache_dir
+
+            if not model_names:
+                logger.info("No model names provided, returning empty list")
+                return []
+
+            cache_info = scan_cache_dir()
             model_paths: list[str] = []
 
-            if hf_home.is_dir():
-                model_paths.extend(
-                    [
-                        str(file_path)
-                        for file_path in hf_home.glob("**/*")
-                        if not file_path.is_dir()
-                        and file_path.exists()
-                        and "__pycache__" not in str(file_path)
-                        and ".venv" not in str(file_path)
-                    ]
-                )
+            # Filter repos by the requested model names
+            for repo in cache_info.repos:
+                if repo.repo_id in model_names:
+                    # Get all file paths for this repo
+                    for revision in repo.revisions:
+                        for file in revision.files:
+                            file_path = Path(file.file_path)
+                            if (
+                                file_path.exists()
+                                and not file_path.is_dir()
+                                and "__pycache__" not in str(file_path)
+                                and ".venv" not in str(file_path)
+                            ):
+                                model_paths.append(str(file_path))
 
-            logger.info("Found %d model files in HuggingFace cache", len(model_paths))
+            logger.info("Found %d model files for %d requested repositories", len(model_paths), len(model_names))
+
         except Exception as e:
-            logger.warning("Failed to scan HuggingFace cache directory: %s", e)
+            logger.warning("Failed to get model paths for repositories %s: %s", model_names, e)
             return []
+
         else:
             return model_paths
 
@@ -376,7 +459,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # Gather model files for use as input paths
             if enable_models_as_attachments:
-                model_paths = self._get_model_paths()
+                model_names = self._gather_models_for_workflow()
+                model_paths = self._get_model_paths(model_names)
                 input_paths.extend(model_paths)
 
             # Use the classmethod to handle the actual upload
