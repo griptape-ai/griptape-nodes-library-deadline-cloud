@@ -147,8 +147,9 @@ logger.setLevel(logging.INFO)
 job_assets_dir = Path("{{{{Param.LocationToRemap}}}}/assets")
 sys.path.insert(0, str(job_assets_dir))
 
-# Set HuggingFace home directory for model cache
-os.environ["HF_HOME"] = "{{{{Param.ModelsLocationToRemap}}}}"
+# Set HuggingFace home directory for model cache, and print
+os.environ["HF_HOME"] = str(Path("{{{{Param.ModelsLocationToRemap}}}}"))
+logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HOME']}}")
 
 # Load environment variables
 if (job_assets_dir / ".env").exists():
