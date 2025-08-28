@@ -134,8 +134,6 @@ from multiprocessing import Queue as ProcessQueue
 from pathlib import Path
 
 from dotenv import load_dotenv
-from griptape_nodes.app.api import start_api
-from griptape_nodes.app.app import _build_static_dir
 
 LIBRARIES = [str(Path(path)) for path in [{library_paths_str}]]
 
@@ -145,6 +143,8 @@ logger.setLevel(logging.INFO)
 
 # Set up paths - use DataDir parameter for job attachments
 job_assets_dir = Path("{{{{Param.LocationToRemap}}}}/assets")
+synced_workflows_dir = Path("{{{{Param.LocationToRemap}}}}/synced_workflows")
+synced_workflows_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(job_assets_dir))
 
 # Set HuggingFace home directory for model cache, and print
@@ -167,9 +167,16 @@ def _set_config(libraries: list[str]) -> None:
         key="workspace_directory",
         value="{{{{Param.LocationToRemap}}}}/output",
     )
+    config_manager.set_config_value(
+        key="synced_workflows_directory",
+        value=str(synced_workflows_dir),
+    )
+    logger.info(config_manager.get_config_value("app_events.on_app_initialization_complete.libraries_to_register"))
 
 _set_config(LIBRARIES)
 
+from griptape_nodes.app.api import start_api
+from griptape_nodes.app.app import _build_static_dir
 from deadline_cloud_workflow_executor import DeadlineCloudWorkflowExecutor
 from workflow import execute_workflow  # type: ignore[attr-defined]
 
@@ -204,8 +211,7 @@ if __name__ == "__main__":
         raise
 
     static_dir = _build_static_dir()
-    event_queue = ProcessQueue()
-    threading.Thread(target=start_api, args=(static_dir, event_queue), daemon=True).start()
+    threading.Thread(target=lambda: start_api(static_dir), daemon=True).start()
 
     workflow_file_path = job_assets_dir / "workflow.py"
     workflow_runner = DeadlineCloudWorkflowExecutor()
