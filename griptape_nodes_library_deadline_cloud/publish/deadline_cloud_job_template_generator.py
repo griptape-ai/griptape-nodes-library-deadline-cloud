@@ -156,9 +156,9 @@ if (job_assets_dir / ".env").exists():
     load_dotenv(str(job_assets_dir / ".env"))
 
 def _set_config(libraries: list[str]) -> None:
-    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager  # noqa: PLC0415
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
 
-    config_manager = ConfigManager()
+    config_manager = GriptapeNodes.ConfigManager()
     config_manager.set_config_value(
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=libraries,
@@ -171,7 +171,8 @@ def _set_config(libraries: list[str]) -> None:
         key="synced_workflows_directory",
         value=str(synced_workflows_dir),
     )
-    logger.info(config_manager.get_config_value("app_events.on_app_initialization_complete.libraries_to_register"))
+
+    GriptapeNodes.LibraryManager().load_all_libraries_from_config()
 
 _set_config(LIBRARIES)
 
