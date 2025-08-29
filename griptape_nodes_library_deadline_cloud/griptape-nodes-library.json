@@ -19,14 +19,14 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
-    "library_version": "0.45.1",
-    "engine_version": "0.45.1",
+    "library_version": "0.51.0",
+    "engine_version": "0.51.0",
     "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
     "dependencies": {
       "pip_dependencies": [
-        "deadline>=0.50.1",
-        "boto3>=1.39.10",
-        "botocore>=1.39.10",
+        "deadline>=0.52.1",
+        "boto3>=1.40.19",
+        "botocore>=1.40.19",
         "huggingface-hub>=0.34.4",
         "python-dotenv>=1.0.1"
       ]

@@ -255,6 +255,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_completed = False
         deadline_client = self._get_client()
         job_details: Any = {}
+        status = "UNKNOWN"
 
         while not job_completed:
             job_details = deadline_client.get_job(jobId=job_id, queueId=queue_id, farmId=farm_id)
@@ -265,6 +266,11 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             if status in ["SUCCEEDED", "FAILED", "CANCELED", "NOT_COMPATIBLE"]:
                 break
             time.sleep(1)
+
+        if status != "SUCCEEDED":
+            msg = f"Job {job_id} did not complete successfully. Final status: {status}"
+            logger.error(msg)
+            raise RuntimeError(msg)
 
         return job_details
 
