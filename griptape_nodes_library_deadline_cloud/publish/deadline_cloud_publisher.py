@@ -49,7 +49,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
     Version,
 )
-from huggingface_hub.constants import HF_HOME
+from huggingface_hub.constants import HF_HUB_CACHE
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
@@ -108,7 +108,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             # Generate an executor workflow that can invoke the published structure
             executor_workflow_path = self._generate_executor_workflow(
                 relative_dir_path=package_path,
-                models_dir_path=self._get_huggingface_home_dir(),
+                models_dir_path=self._resolve_path(self._get_huggingface_cache_dir()),
                 attachments=manifests,
                 job_attachment_settings=job_attachment_settings,
                 workflow_shape=workflow_shape,
@@ -130,6 +130,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             details = f"Unexpected error publishing workflow '{self._workflow_name}': {e}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e)
+
+    def _resolve_path(self, path_to_resolve: str) -> str:
+        # Use resolve() to handle mapped drives
+        path = Path(path_to_resolve).resolve()
+        return str(path)
 
     def _gather_models_for_workflow(self) -> list[str]:
         flow_manager = GriptapeNodes.FlowManager()
@@ -351,9 +356,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.exception(details)
             raise RuntimeError(details) from e
 
-    def _get_huggingface_home_dir(self) -> str:
-        """Get the top-level HuggingFace home directory path."""
-        return HF_HOME
+    def _get_huggingface_cache_dir(self) -> str:
+        """Get the top-level HuggingFace cache directory path."""
+        return HF_HUB_CACHE
 
     def _get_huggingface_repo_names(self) -> list[str]:
         """Get the names of HuggingFace repositories from the huggingface_hub cache directory."""
@@ -393,6 +398,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                                 and ".venv" not in str(file_path)
                             ):
                                 model_paths.append(str(file_path))
+
+            # Create dummy file in HF_HUB_CACHE path to ensure cache root directory syncs to deadline
+            dummy_file_path = (Path(self._get_huggingface_cache_dir()) / "dummy.txt").resolve()
+            dummy_file_path.write_text("This is a dummy file for path remapping.")
+            model_paths.append(str(dummy_file_path))
 
             logger.info("Found %d model files for %d requested repositories", len(model_paths), len(model_names))
 

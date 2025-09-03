@@ -142,14 +142,17 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Set up paths - use DataDir parameter for job attachments
-job_assets_dir = Path("{{{{Param.LocationToRemap}}}}/assets")
-synced_workflows_dir = Path("{{{{Param.LocationToRemap}}}}/synced_workflows")
+location_to_remap = r"{{{{Param.LocationToRemap}}}}"
+models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
+
+job_assets_dir = Path(location_to_remap) / "assets"
+synced_workflows_dir = Path(location_to_remap) / "synced_workflows"
 synced_workflows_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(job_assets_dir))
 
-# Set HuggingFace home directory for model cache, and print
-os.environ["HF_HOME"] = str(Path("{{{{Param.ModelsLocationToRemap}}}}"))
-logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HOME']}}")
+# Set HuggingFace hub cache directory for model cache, and print
+os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
+logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
 
 # Load environment variables
 if (job_assets_dir / ".env").exists():
@@ -157,6 +160,7 @@ if (job_assets_dir / ".env").exists():
 
 def _set_config(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
+    from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesRequest
 
     config_manager = GriptapeNodes.ConfigManager()
     config_manager.set_config_value(
@@ -165,14 +169,14 @@ def _set_config(libraries: list[str]) -> None:
     )
     config_manager.set_config_value(
         key="workspace_directory",
-        value="{{{{Param.LocationToRemap}}}}/output",
+        value=str(Path(location_to_remap) / "output"),
     )
     config_manager.set_config_value(
         key="synced_workflows_directory",
         value=str(synced_workflows_dir),
     )
 
-    GriptapeNodes.LibraryManager().load_all_libraries_from_config()
+    GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
 
 _set_config(LIBRARIES)
 
@@ -182,6 +186,7 @@ from deadline_cloud_workflow_executor import DeadlineCloudWorkflowExecutor
 from workflow import execute_workflow  # type: ignore[attr-defined]
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input-file",
