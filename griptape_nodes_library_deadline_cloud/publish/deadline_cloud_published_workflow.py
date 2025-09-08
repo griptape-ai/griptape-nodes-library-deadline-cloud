@@ -320,12 +320,20 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         deadline_client = self._get_client()
         queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
         job_attachment_settings = JobAttachmentS3Settings(**queue_response["jobAttachmentSettings"])
+
+        queue_session = get_queue_user_boto3_session(
+            deadline_client,
+            None,
+            farm_id,
+            queue_id,
+        )
+
         downloader = OutputDownloader(
             s3_settings=job_attachment_settings,
             farm_id=farm_id,
             queue_id=queue_id,
             job_id=job_id,
-            session=self._session,
+            session=queue_session,
         )
 
         def on_download_progress(progress: Any) -> bool:

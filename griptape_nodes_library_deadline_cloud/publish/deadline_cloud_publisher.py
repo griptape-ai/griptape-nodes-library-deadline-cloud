@@ -119,17 +119,19 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
+                result_details=f"Workflow '{self._workflow_name}' published successfully.",
             )
         except (ValueError, RuntimeError, ClientError, BotoCoreError) as e:
             details = f"Failed to publish workflow '{self._workflow_name}'. Error: {e}"
             logger.error(details)
             return PublishWorkflowResultFailure(
                 exception=e,
+                result_details=details,
             )
         except Exception as e:
             details = f"Unexpected error publishing workflow '{self._workflow_name}': {e}"
             logger.exception(details)
-            return PublishWorkflowResultFailure(exception=e)
+            return PublishWorkflowResultFailure(exception=e, result_details=details)
 
     def _resolve_path(self, path_to_resolve: str) -> str:
         # Use resolve() to handle mapped drives
