@@ -180,7 +180,7 @@ def _set_config(libraries: list[str]) -> None:
 
 _set_config(LIBRARIES)
 
-from griptape_nodes.app.api import start_api
+from griptape_nodes.app.api import start_static_server
 from griptape_nodes.app.app import _build_static_dir
 from deadline_cloud_workflow_executor import DeadlineCloudWorkflowExecutor
 from workflow import execute_workflow  # type: ignore[attr-defined]
@@ -217,7 +217,7 @@ if __name__ == "__main__":
         raise
 
     static_dir = _build_static_dir()
-    threading.Thread(target=lambda: start_api(static_dir), daemon=True).start()
+    threading.Thread(target=lambda: start_static_server(static_dir), daemon=True).start()
 
     workflow_file_path = job_assets_dir / "workflow.py"
     workflow_runner = DeadlineCloudWorkflowExecutor()

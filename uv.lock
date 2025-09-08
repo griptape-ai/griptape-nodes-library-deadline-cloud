@@ -232,8 +232,8 @@ wheels = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.51.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#9b23fb5f474e0c50214dae4a7bf4ff872fb92ff2" }
+version = "0.52.1"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#1a235feb451a0a1e3bb1002c592ae648e62650bd" }
 dependencies = [
     { name = "binaryornot" },
     { name = "fastapi" },
@@ -247,6 +247,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "tomlkit" },
+    { name = "typer" },
     { name = "uv" },
     { name = "uvicorn" },
     { name = "watchfiles" },
