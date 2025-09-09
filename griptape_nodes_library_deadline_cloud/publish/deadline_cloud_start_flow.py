@@ -16,6 +16,8 @@ class DeadlineCloudStartFlow(StartNode):
         if metadata is None:
             metadata = {}
         metadata["showaddparameter"] = True
+        job_name = metadata.get("job_name", "")
+        job_description = metadata.get("job_description", "")
         super().__init__(name, metadata)
 
         # Add job config group
@@ -24,6 +26,7 @@ class DeadlineCloudStartFlow(StartNode):
                 name="job_name",
                 input_types=["str"],
                 type="str",
+                default_value=job_name,
                 output_type="str",
                 tooltip="The job name for the Deadline Cloud Job.",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
@@ -32,6 +35,7 @@ class DeadlineCloudStartFlow(StartNode):
                 name="job_description",
                 input_types=["str"],
                 type="str",
+                default_value=job_description,
                 output_type="str",
                 tooltip="The job description for the Deadline Cloud Job.",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
