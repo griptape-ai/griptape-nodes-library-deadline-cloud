@@ -94,8 +94,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
-            if self.execute_on_publish:
-                self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
+            self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
             package_path = self._package_workflow(self._workflow_name)
@@ -759,6 +758,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             workflow_name=self._workflow_name,
             workflow_shape=workflow_shape,
             executor_workflow_name=self._published_workflow_file_name,
+            job_name=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_name", ""),
+            job_description=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_description", ""),
             libraries=library_paths,
         )
         return builder.generate_executor_workflow()

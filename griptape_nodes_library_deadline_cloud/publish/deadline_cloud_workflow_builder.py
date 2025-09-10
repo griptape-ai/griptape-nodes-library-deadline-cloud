@@ -36,6 +36,8 @@ class DeadlineCloudWorkflowBuilder:
         workflow_name: str,
         workflow_shape: dict[str, Any],
         executor_workflow_name: str,
+        job_name: str = "",
+        job_description: str = "",
         libraries: list[str] | None = None,
     ) -> None:
         """Initialize the WorkflowBuilder.
@@ -49,6 +51,8 @@ class DeadlineCloudWorkflowBuilder:
             workflow_name: Name of the original workflow that was published.
             workflow_shape: Input/output parameter structure for the workflow.
             executor_workflow_name: Name of the executor workflow to be created.
+            job_name: Name for the Deadline Cloud job.
+            job_description: Description for the Deadline Cloud job.
             libraries: List of libraries needed for the workflow.
         """
         self.attachments = attachments
@@ -59,6 +63,8 @@ class DeadlineCloudWorkflowBuilder:
         self.workflow_name = workflow_name
         self.workflow_shape = workflow_shape
         self.executor_workflow_name = executor_workflow_name
+        self.job_name = job_name
+        self.job_description = job_description
         self.libraries = libraries or []
 
     def generate_executor_workflow(
@@ -165,6 +171,10 @@ def main():
             node_type="{DeadlineCloudStartFlow.__name__}",
             specific_library_name="{LIBRARY_NAME}",
             node_name="Deadline Cloud Start Flow",
+            metadata={{
+                "job_name": {self.job_name!r},
+                "job_description": {self.job_description!r},
+            }},
             initial_setup=True
         ))
         start_node_name = start_node_response.node_name
@@ -365,7 +375,7 @@ if __name__ == "__main__":
                 capture_output=True,
                 text=True,
                 cwd=temp_script_path.parent,
-                timeout=30,
+                timeout=300,
                 check=False,
             )
 
