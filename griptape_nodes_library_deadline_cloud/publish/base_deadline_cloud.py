@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import boto3
-from deadline.client.api import get_boto3_session
+from deadline.client.api import get_boto3_session, get_storage_profile_for_queue
 from deadline.client.config import get_setting_default
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
@@ -13,6 +13,7 @@ from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 
 if TYPE_CHECKING:
     from botocore.client import BaseClient
+    from deadline.job_attachments.models import StorageProfile
 
 
 T = TypeVar("T")
@@ -83,3 +84,10 @@ class BaseDeadlineCloud:
                 "deadline", region_name=self._get_config_value(DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "region_name")
             )
         return self._client
+
+    def _get_storage_profile_for_queue(
+        self, farm_id: str, queue_id: str, storage_profile_id: Any
+    ) -> StorageProfile | None:
+        if storage_profile_id and storage_profile_id != "":
+            return get_storage_profile_for_queue(farm_id, queue_id, storage_profile_id, self._get_client())
+        return None

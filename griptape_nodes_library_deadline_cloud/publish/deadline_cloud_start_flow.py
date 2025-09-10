@@ -18,6 +18,9 @@ class DeadlineCloudStartFlow(StartNode):
         metadata["showaddparameter"] = True
         job_name = metadata.get("job_name", "")
         job_description = metadata.get("job_description", "")
+        farm_id = metadata.get("farm_id", "")
+        queue_id = metadata.get("queue_id", "")
+        storage_profile_id = metadata.get("storage_profile_id", "")
         super().__init__(name, metadata)
 
         # Add job config group
@@ -87,7 +90,9 @@ class DeadlineCloudStartFlow(StartNode):
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=BaseDeadlineCloud._get_config_value(
+                default_value=farm_id
+                if farm_id != ""
+                else BaseDeadlineCloud._get_config_value(
                     DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
                 ),
                 tooltip="The farm to use for the Deadline Cloud Job.",
@@ -98,10 +103,27 @@ class DeadlineCloudStartFlow(StartNode):
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=BaseDeadlineCloud._get_config_value(
+                default_value=queue_id
+                if queue_id != ""
+                else BaseDeadlineCloud._get_config_value(
                     DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
                 ),
                 tooltip="The queue to use for the Deadline Cloud Job.",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+            )
+            Parameter(
+                name="storage_profile_id",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=storage_profile_id
+                if storage_profile_id != ""
+                else BaseDeadlineCloud._get_config_value(
+                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+                    "storage_profile_id",
+                    default=get_setting_default("settings.storage_profile_id"),
+                ),
+                tooltip="The storage profile ID for the Deadline Cloud Job.",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
 

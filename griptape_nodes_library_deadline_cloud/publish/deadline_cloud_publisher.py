@@ -58,10 +58,16 @@ from publish.deadline_cloud_job_template_generator import (
 from publish.deadline_cloud_subprocess_executor import (
     DeadlineCloudSubprocessExecutor,
 )
-from publish.deadline_cloud_workflow_builder import LIBRARY_NAME, DeadlineCloudWorkflowBuilder
+from publish.deadline_cloud_workflow_builder import (
+    LIBRARY_NAME,
+    DeadlineCloudJobDetails,
+    DeadlineCloudWorkflowBuilder,
+    DeadlineCloudWorkflowBuilderInput,
+)
 
 if TYPE_CHECKING:
     from boto3 import Session
+    from deadline.job_attachments.models import StorageProfile
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -290,6 +296,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         output_paths: list[str],
         farm_id: str,
         queue_id: str,
+        storage_profile: StorageProfile | None,
         job_attachment_settings: JobAttachmentS3Settings,
         queue_session: Session,
     ) -> Attachments:
@@ -313,7 +320,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.debug("Found %d input files to upload", len(input_paths))
 
             upload_group = s3_asset_manager.prepare_paths_for_upload(
-                input_paths=input_paths, output_paths=output_paths, referenced_paths=[]
+                input_paths=input_paths, output_paths=output_paths, referenced_paths=[], storage_profile=storage_profile
             )
 
             # Hash assets and create manifests following GitHub example pattern
@@ -430,6 +437,21 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             queue_id = self._get_config_value(
                 DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
             )
+            storage_profile_id = self._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+                "storage_profile_id",
+                default=get_setting_default("settings.storage_profile_id"),
+            )
+
+            if self._create_run_input.get("Deadline Cloud Start Flow") is not None:
+                start_flow_input = self._create_run_input["Deadline Cloud Start Flow"]
+                if "farm_id" in start_flow_input:
+                    farm_id = start_flow_input["farm_id"]
+                if "queue_id" in start_flow_input:
+                    queue_id = start_flow_input["queue_id"]
+                if "storage_profile_id" in start_flow_input:
+                    storage_profile_id = start_flow_input["storage_profile_id"]
+
             logger.info("Using farm_id: %s, queue_id: %s", farm_id, queue_id)
             enable_models_as_attachments = self._get_config_value(
                 DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "enable_models_as_attachments", default=True
@@ -474,12 +496,17 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 model_paths = self._get_model_paths(model_names)
                 input_paths.extend(model_paths)
 
+            storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
+                farm_id, queue_id, storage_profile_id
+            )
+
             # Use the classmethod to handle the actual upload
             attachments = self.upload_paths_as_job_attachments(
                 input_paths=input_paths,
                 output_paths=[str(job_bundle_path / "output")],
                 farm_id=farm_id,
                 queue_id=queue_id,
+                storage_profile=storage_profile,
                 job_attachment_settings=job_attachment_settings,
                 queue_session=queue_session,
             )
@@ -750,16 +777,27 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             raise ValueError(details)
         library_paths = [library.library_path for library in libraries if library.library_path is not None]
         builder = DeadlineCloudWorkflowBuilder(
-            attachments=attachments,
-            job_attachment_settings=job_attachment_settings,
-            job_template=self._job_template,
-            relative_dir_path=relative_dir_path,
-            models_dir_path=models_dir_path,
-            workflow_name=self._workflow_name,
-            workflow_shape=workflow_shape,
-            executor_workflow_name=self._published_workflow_file_name,
-            job_name=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_name", ""),
-            job_description=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_description", ""),
-            libraries=library_paths,
+            workflow_builder_input=DeadlineCloudWorkflowBuilderInput(
+                attachments=attachments,
+                job_attachment_settings=job_attachment_settings,
+                job_template=self._job_template,
+                relative_dir_path=relative_dir_path,
+                models_dir_path=models_dir_path,
+                workflow_name=self._workflow_name,
+                workflow_shape=workflow_shape,
+                executor_workflow_name=self._published_workflow_file_name,
+                job_details=DeadlineCloudJobDetails(
+                    job_name=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_name", ""),
+                    job_description=self._create_run_input.get("Deadline Cloud Start Flow", {}).get(
+                        "job_description", ""
+                    ),
+                    farm_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("farm_id", ""),
+                    queue_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("queue_id", ""),
+                    storage_profile_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get(
+                        "storage_profile_id", ""
+                    ),
+                ),
+                libraries=library_paths,
+            )
         )
         return builder.generate_executor_workflow()

@@ -8,7 +8,7 @@ import logging
 import subprocess
 import sys
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,64 +23,65 @@ logger = logging.getLogger(__name__)
 LIBRARY_NAME = "AWS Deadline Cloud Library"
 
 
+@dataclass
+class DeadlineCloudJobDetails:
+    job_name: str = ""
+    job_description: str = ""
+    farm_id: str = ""
+    queue_id: str = ""
+    storage_profile_id: str = ""
+
+
+@dataclass
+class DeadlineCloudWorkflowBuilderInput:
+    attachments: Attachments
+    job_attachment_settings: JobAttachmentS3Settings
+    job_template: dict[str, Any]
+    relative_dir_path: str
+    models_dir_path: str
+    workflow_name: str
+    workflow_shape: dict[str, Any]
+    executor_workflow_name: str
+    job_details: DeadlineCloudJobDetails = field(default_factory=lambda: DeadlineCloudJobDetails())
+    libraries: list[str] = field(default_factory=list)
+
+
 class DeadlineCloudWorkflowBuilder:
     """Builder class for generating executor workflows using simple script generation."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
-        attachments: Attachments,
-        job_attachment_settings: JobAttachmentS3Settings,
-        job_template: dict[str, Any],
-        relative_dir_path: str,
-        models_dir_path: str,
-        workflow_name: str,
-        workflow_shape: dict[str, Any],
-        executor_workflow_name: str,
-        job_name: str = "",
-        job_description: str = "",
-        libraries: list[str] | None = None,
+        workflow_builder_input: DeadlineCloudWorkflowBuilderInput,
     ) -> None:
         """Initialize the WorkflowBuilder.
 
         Args:
-            attachments: Attachments object containing job attachments.
-            job_attachment_settings: Settings for job attachment S3 configuration.
-            job_template: The job template to use for the Deadline Cloud job.
-            relative_dir_path: Relative path for the workflow files.
-            models_dir_path: Path to the directory containing model files.
-            workflow_name: Name of the original workflow that was published.
-            workflow_shape: Input/output parameter structure for the workflow.
-            executor_workflow_name: Name of the executor workflow to be created.
-            job_name: Name for the Deadline Cloud job.
-            job_description: Description for the Deadline Cloud job.
-            libraries: List of libraries needed for the workflow.
+            workflow_builder_input: Input configuration containing all necessary parameters.
         """
-        self.attachments = attachments
-        self.job_attachment_settings = job_attachment_settings
-        self.job_template = job_template
-        self.relative_dir_path = relative_dir_path
-        self.models_dir_path = models_dir_path
-        self.workflow_name = workflow_name
-        self.workflow_shape = workflow_shape
-        self.executor_workflow_name = executor_workflow_name
-        self.job_name = job_name
-        self.job_description = job_description
-        self.libraries = libraries or []
+        self.workflow_builder_input = workflow_builder_input
 
     def generate_executor_workflow(
         self,
     ) -> Path:
         """Generate an executor workflow that can invoke the published Deadline Cloud job."""
         # Generate a simple workflow creation script using PublishedWorkflow node
-        workflow_script = self._build_simple_workflow_script(self.job_template, self.workflow_shape, self.libraries)
+        workflow_script = self._build_simple_workflow_script(
+            self.workflow_builder_input.job_template,
+            self.workflow_builder_input.workflow_shape,
+            self.workflow_builder_input.libraries,
+        )
 
         # Execute the script in a subprocess to create the workflow
         self._execute_workflow_script(workflow_script)
 
         # Verify the workflow was created successfully
-        executor_workflow_path = GriptapeNodes.ConfigManager().workspace_path / (self.executor_workflow_name + ".py")
+        executor_workflow_path = GriptapeNodes.ConfigManager().workspace_path / (
+            self.workflow_builder_input.executor_workflow_name + ".py"
+        )
         if not executor_workflow_path.exists():
-            error_msg = f"Executor workflow {self.executor_workflow_name} was not created successfully."
+            error_msg = (
+                f"Executor workflow {self.workflow_builder_input.executor_workflow_name} was not created successfully."
+            )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
         return executor_workflow_path
@@ -159,7 +160,7 @@ def main():
 
     context_manager = GriptapeNodes.ContextManager()
     if not context_manager.has_current_workflow():
-        context_manager.push_workflow(workflow_name="{self.executor_workflow_name}")
+        context_manager.push_workflow(workflow_name="{self.workflow_builder_input.executor_workflow_name}")
 
     # Create the main flow
     flow_response = GriptapeNodes.handle_request(CreateFlowRequest(parent_flow_name=None))
@@ -172,8 +173,8 @@ def main():
             specific_library_name="{LIBRARY_NAME}",
             node_name="Deadline Cloud Start Flow",
             metadata={{
-                "job_name": {self.job_name!r},
-                "job_description": {self.job_description!r},
+                "job_name": {self.workflow_builder_input.job_details.job_name!r},
+                "job_description": {self.workflow_builder_input.job_details.job_description!r},
             }},
             initial_setup=True
         ))
@@ -187,10 +188,10 @@ def main():
             metadata={{
                 "workflow_shape": {workflow_shape!r},
                 "job_template": {job_template!r},
-                "job_attachment_settings": {asdict(self.job_attachment_settings)!r},
-                "attachments": {self.attachments.to_dict()!r},
-                "relative_dir_path": {self.relative_dir_path!r},
-                "models_dir_path": {self.models_dir_path!r},
+                "job_attachment_settings": {asdict(self.workflow_builder_input.job_attachment_settings)!r},
+                "attachments": {self.workflow_builder_input.attachments.to_dict()!r},
+                "relative_dir_path": {self.workflow_builder_input.relative_dir_path!r},
+                "models_dir_path": {self.workflow_builder_input.models_dir_path!r},
             }},
             initial_setup=True
         ))
@@ -347,10 +348,10 @@ def main():
 
     # Save the workflow
     save_response = GriptapeNodes.handle_request(SaveWorkflowRequest(
-        file_name="{self.executor_workflow_name}"))
+        file_name="{self.workflow_builder_input.executor_workflow_name}"))
 
     if save_response.succeeded():
-        print(f"Successfully created executor workflow: {self.executor_workflow_name}")
+        print(f"Successfully created executor workflow: {self.workflow_builder_input.executor_workflow_name}")
     else:
         print(f"Failed to create executor workflow")
         exit(1)
@@ -390,7 +391,9 @@ if __name__ == "__main__":
                 logger.error("Failed to generate executor workflow: %s", result.stderr)
                 raise RuntimeError(error_msg)
 
-            logger.info("Successfully generated executor workflow: %s", self.executor_workflow_name)
+            logger.info(
+                "Successfully generated executor workflow: %s", self.workflow_builder_input.executor_workflow_name
+            )
 
         finally:
             # Clean up temporary script

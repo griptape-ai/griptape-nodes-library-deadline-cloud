@@ -152,6 +152,7 @@ sys.path.insert(0, str(job_assets_dir))
 
 # Set HuggingFace hub cache directory for model cache, and print
 os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
+os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(Path(location_to_remap) / "output")
 logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
 
 # Load environment variables
@@ -180,9 +181,8 @@ def _set_config(libraries: list[str]) -> None:
 
 _set_config(LIBRARIES)
 
-from griptape_nodes.app.api import start_static_server
-from griptape_nodes.app.app import _build_static_dir
 from deadline_cloud_workflow_executor import DeadlineCloudWorkflowExecutor
+from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from workflow import execute_workflow  # type: ignore[attr-defined]
 
 if __name__ == "__main__":
@@ -216,11 +216,8 @@ if __name__ == "__main__":
         logger.info(msg)
         raise
 
-    static_dir = _build_static_dir()
-    threading.Thread(target=lambda: start_static_server(static_dir), daemon=True).start()
-
     workflow_file_path = job_assets_dir / "workflow.py"
-    workflow_runner = DeadlineCloudWorkflowExecutor()
+    workflow_runner = DeadlineCloudWorkflowExecutor(storage_backend=StorageBackend("local"))
     execute_workflow(
         input=flow_input,
         storage_backend="local",
