@@ -232,8 +232,8 @@ wheels = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.52.1"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#1a235feb451a0a1e3bb1002c592ae648e62650bd" }
+version = "0.53.0"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#1c86433ca5329cff45badf1e1e122388f2d06c41" }
 dependencies = [
     { name = "binaryornot" },
     { name = "fastapi" },

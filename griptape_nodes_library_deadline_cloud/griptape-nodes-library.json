@@ -9,6 +9,7 @@
       "contents": {
         "farm_id": "",
         "queue_id": "",
+        "storage_profile_id": "",
         "monitor_url": "https://my-monitor-name.us-east-1.deadlinecloud.amazonaws.com",
         "profile_name": "",
         "region_name": "us-east-1",
@@ -19,8 +20,8 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
-    "library_version": "0.52.1",
-    "engine_version": "0.52.1",
+    "library_version": "0.53.0",
+    "engine_version": "0.53.0",
     "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
     "dependencies": {
       "pip_dependencies": [

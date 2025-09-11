@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import json
 import logging
@@ -5,18 +7,21 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.api import get_queue_user_boto3_session
 from deadline.client.config import get_setting_default
 from deadline.job_attachments.download import OutputDownloader
 from deadline.job_attachments.models import JobAttachmentS3Settings
-from griptape_nodes.app.app import _build_static_dir
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
+
+if TYPE_CHECKING:
+    from deadline.job_attachments.models import StorageProfile
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -109,6 +114,18 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                 ),
                 tooltip="The queue ID for the Deadline Cloud Job.",
             )
+            Parameter(
+                name="storage_profile_id",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=self._get_config_value(
+                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+                    "storage_profile_id",
+                    default=get_setting_default("settings.storage_profile_id"),
+                ),
+                tooltip="The storage profile ID for the Deadline Cloud Job.",
+            )
 
         submission_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
         self.add_node_element(submission_config_group)
@@ -175,6 +192,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             "max_task_retries",
             "farm_id",
             "queue_id",
+            "storage_profile_id",
         ]
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -200,13 +218,14 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         # if there are exceptions, they will display when the user tries to run the flow with the node.
         return exceptions if exceptions else None
 
-    def _submit_job_with_attachments(
+    def _submit_job_with_attachments(  # noqa: PLR0913
         self,
         attachments: dict[str, Any],
         farm_id: str,
         queue_id: str,
         job_template: dict[str, Any],
         job_parameters: dict[str, Any] | None = None,
+        storage_profile: StorageProfile | None = None,
     ) -> str:
         """Submit job to Deadline Cloud with processed attachments."""
         try:
@@ -219,19 +238,23 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             max_task_retries = self.get_parameter_value("max_task_retries")
             initial_state = self.get_parameter_value("initial_state")
 
+            create_job_kwargs = {
+                "farmId": farm_id,
+                "queueId": queue_id,
+                "template": job_template_str,
+                "templateType": "JSON",
+                "parameters": job_parameters if job_parameters is not None else {},
+                "priority": priority,
+                "maxFailedTasksCount": max_failed_tasks,
+                "maxRetriesPerTask": max_task_retries,
+                "targetTaskRunStatus": initial_state,
+                "attachments": attachments,
+            }
+            if storage_profile is not None:
+                create_job_kwargs["storageProfileId"] = storage_profile.storageProfileId
+
             # Create job with attachments
-            response = deadline_client.create_job(
-                farmId=farm_id,
-                queueId=queue_id,
-                template=job_template_str,
-                templateType="JSON",
-                parameters=job_parameters if job_parameters is not None else {},
-                priority=priority,
-                maxFailedTasksCount=max_failed_tasks,
-                maxRetriesPerTask=max_task_retries,
-                targetTaskRunStatus=initial_state,
-                attachments=attachments,
-            )
+            response = deadline_client.create_job(**create_job_kwargs)
 
             job_id = response["jobId"]
             logger.info("Job submitted successfully with ID: %s", job_id)
@@ -274,10 +297,19 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
 
         return job_details
 
+    def _get_static_files_directory(self) -> Path:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        workspace_dir = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value("static_files_directory")
+
+        return Path(workspace_dir) / static_files_dir
+
     def _extract_workflow_output_from_output_paths(self, output_paths: dict[str, list[str]]) -> dict:
         """Extract workflow output from the output paths."""
         # output_paths is a dictionary of root paths to output file paths like:
         # {'/var/folders/3v/jg416m5115j47dxwzznmqfhc0000gn/T/flowy_deadline_bundle_3s0cvl9d': ['output/workflow_output.json']}  # noqa: ERA001
+
         workflow_output = {}
         for root_path, output_files in output_paths.items():
             for output_file in output_files:
@@ -288,7 +320,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                     workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
                 elif "output" in output_file and "staticfiles" in output_file:
                     static_file_path = Path(root_path) / output_file
-                    static_dir = _build_static_dir()
+                    static_dir = self._get_static_files_directory()
                     # Copy the static file to the static directory
                     shutil.copy(static_file_path, static_dir / static_file_path.name)
 
@@ -395,7 +427,9 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
 
         return job_template
 
-    def _upload_input_json_to_s3(self, input_json: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _upload_input_json_to_s3(
+        self, input_json: dict[str, Any], farm_id: str, queue_id: str, storage_profile: StorageProfile | None = None
+    ) -> tuple[str, dict[str, Any]]:
         """Upload input JSON to S3 as a job attachment and return the relative path."""
         try:
             from publish.deadline_cloud_publisher import DeadlineCloudPublisher
@@ -407,9 +441,6 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                 json.dump(input_json, f, indent=2)
 
             logger.info("Created input JSON file at: %s", input_json_path)
-
-            farm_id = self.get_parameter_value("farm_id")
-            queue_id = self.get_parameter_value("queue_id")
             deadline_client = self._get_client()
 
             queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
@@ -428,6 +459,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
                 output_paths=[],
                 farm_id=farm_id,
                 queue_id=queue_id,
+                storage_profile=storage_profile,
                 job_attachment_settings=job_attachment_settings,
                 queue_session=queue_session,
             )
@@ -468,13 +500,20 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         models_dir_path = self.get_parameter_value("models_dir_path")
         farm_id = self.get_parameter_value("farm_id")
         queue_id = self.get_parameter_value("queue_id")
+        storage_profile_id = self.get_parameter_value("storage_profile_id")
 
         root_dir = str(attachments["manifests"][0]["rootPath"])
         input_json = self._collect_input_parameters()
 
+        storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
+            farm_id, queue_id, storage_profile_id
+        )
+
         # Upload input JSON to S3 to avoid parameter size limits
         logger.info("Uploading input JSON to S3 to avoid parameter size limits")
-        input_json_path, input_attachments = self._upload_input_json_to_s3(input_json)
+        input_json_path, input_attachments = self._upload_input_json_to_s3(
+            input_json, farm_id, queue_id, storage_profile
+        )
 
         # Combine the original attachments with the input JSON attachments
         combined_attachments = self._combine_attachments(attachments, input_attachments)
@@ -493,6 +532,7 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             queue_id=queue_id,
             job_template=job_template,
             job_parameters=job_parameters,
+            storage_profile=storage_profile,
         )
 
         self._poll_job(
