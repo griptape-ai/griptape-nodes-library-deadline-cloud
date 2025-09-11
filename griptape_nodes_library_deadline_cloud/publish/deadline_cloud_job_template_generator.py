@@ -146,7 +146,7 @@ location_to_remap = r"{{{{Param.LocationToRemap}}}}"
 models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
 
 job_assets_dir = Path(location_to_remap) / "assets"
-synced_workflows_dir = Path(location_to_remap) / "synced_workflows"
+synced_workflows_dir = Path(location_to_remap) / "output" / "synced_workflows_directory"
 synced_workflows_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(job_assets_dir))
 
