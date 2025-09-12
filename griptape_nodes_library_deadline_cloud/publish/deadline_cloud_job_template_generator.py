@@ -100,8 +100,6 @@ echo 'Virtual environment setup complete.'
                                     "{{Task.File.Run}}",
                                     "--input-file",
                                     "{{Param.InputFile}}",
-                                    "--data-dir",
-                                    "{{Param.LocationToRemap}}/assets",
                                 ],
                             }
                         },
@@ -127,10 +125,8 @@ echo 'Virtual environment setup complete.'
         return f"""import argparse
 import json
 import logging
-import threading
 import os
 import sys
-from multiprocessing import Queue as ProcessQueue
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -146,18 +142,19 @@ location_to_remap = r"{{{{Param.LocationToRemap}}}}"
 models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
 
 job_assets_dir = Path(location_to_remap) / "assets"
-synced_workflows_dir = Path(location_to_remap) / "output" / "synced_workflows_directory"
+synced_workflows_dir = Path(location_to_remap) / "output" / "synced_workflows"
 synced_workflows_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(job_assets_dir))
+
+# Load environment variables
+if (job_assets_dir / ".env").exists():
+    load_dotenv(str(job_assets_dir / ".env"))
 
 # Set HuggingFace hub cache directory for model cache, and print
 os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
 os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(Path(location_to_remap) / "output")
 logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
-
-# Load environment variables
-if (job_assets_dir / ".env").exists():
-    load_dotenv(str(job_assets_dir / ".env"))
+logger.info(f"Griptape workspace directory set to: {{os.environ['GTN_CONFIG_WORKSPACE_DIRECTORY']}}")
 
 def _set_config(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
@@ -171,10 +168,6 @@ def _set_config(libraries: list[str]) -> None:
     config_manager.set_config_value(
         key="workspace_directory",
         value=str(Path(location_to_remap) / "output"),
-    )
-    config_manager.set_config_value(
-        key="synced_workflows_directory",
-        value=str(synced_workflows_dir),
     )
 
     GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
@@ -193,15 +186,9 @@ if __name__ == "__main__":
         default=None,
         help="Path to JSON file containing input for the workflow",
     )
-    parser.add_argument(
-        "--data-dir",
-        default=".",
-        help="Directory containing job attachments and workflow files",
-    )
 
     args = parser.parse_args()
     input_file_path = args.input_file
-    data_dir = Path(args.data_dir)
 
     try:
         if input_file_path:
