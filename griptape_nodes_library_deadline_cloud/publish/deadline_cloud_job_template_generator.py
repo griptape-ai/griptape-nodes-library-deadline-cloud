@@ -158,7 +158,6 @@ logger.info(f"Griptape workspace directory set to: {{os.environ['GTN_CONFIG_WORK
 
 def _set_config(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
-    from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesRequest
 
     config_manager = GriptapeNodes.ConfigManager()
     config_manager.set_config_value(
@@ -169,8 +168,6 @@ def _set_config(libraries: list[str]) -> None:
         key="workspace_directory",
         value=str(Path(location_to_remap) / "output"),
     )
-
-    GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
 
 _set_config(LIBRARIES)
 
