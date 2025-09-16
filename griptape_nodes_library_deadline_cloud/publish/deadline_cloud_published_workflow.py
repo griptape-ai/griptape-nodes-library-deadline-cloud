@@ -11,13 +11,16 @@ from typing import TYPE_CHECKING, Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.api import get_queue_user_boto3_session
-from deadline.client.config import get_setting_default
 from deadline.job_attachments.download import OutputDownloader
 from deadline.job_attachments.models import JobAttachmentS3Settings
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
+from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
+from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter import (
+    DeadlineCloudJobSubmissionConfigAdvancedParameter,
+)
+from publish.parameters.deadline_cloud_job_submission_config_parameter import DeadlineCloudJobSubmissionConfigParameter
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -45,90 +48,15 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         self.models_dir_path = metadata.get("models_dir_path", "")
         self.workflow_shape = metadata.get("workflow_shape", {})
 
-        with ParameterGroup(name="Job Submission Config") as submission_config_group:
-            Parameter(
-                name="job_name",
-                input_types=["str"],
-                type="str",
-                default_value="",
-                output_type="str",
-                tooltip="The job name for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="job_description",
-                input_types=["str"],
-                type="str",
-                default_value="",
-                output_type="str",
-                tooltip="The job description for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="priority",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                default_value=50,
-                tooltip="The job priority for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="initial_state",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value="READY",
-                tooltip="The initial state for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="max_failed_tasks",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                default_value=50,
-                tooltip="The maximum number of failed tasks before the job is considered failed.",
-            )
-            Parameter(
-                name="max_task_retries",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                default_value=10,
-                tooltip="The maximum number of task retries before the job is considered failed.",
-            )
-            Parameter(
-                name="farm_id",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value=self._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
-                ),
-                tooltip="The farm ID for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="queue_id",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value=self._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
-                ),
-                tooltip="The queue ID for the Deadline Cloud Job.",
-            )
-            Parameter(
-                name="storage_profile_id",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value=self._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
-                    "storage_profile_id",
-                    default=get_setting_default("settings.storage_profile_id"),
-                ),
-                tooltip="The storage profile ID for the Deadline Cloud Job.",
-            )
+        # Add job config group
+        self.job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(self, metadata)
 
-        submission_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
-        self.add_node_element(submission_config_group)
+        # Add advanced job config group
+        self._job_submission_config_advanced_params = DeadlineCloudJobSubmissionConfigAdvancedParameter(self, metadata)
+
+        # Add host config group
+        self._host_config_params = DeadlineCloudHostConfigParameter(self)
+        self._host_config_params.set_host_config_param_visibility(visible=False)
 
         # Add job config group
         with ParameterGroup(name="Job Config") as job_config_group:
@@ -180,20 +108,17 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
         self.add_node_element(job_config_group)
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "run_on_all_worker_hosts":
+            self._host_config_params.set_host_config_param_visibility(visible=not value)
+
     @classmethod
     def get_job_submission_parameter_names(cls) -> list[str]:
         """Get the names of the job submission parameters."""
-        return [
-            "job_name",
-            "job_description",
-            "priority",
-            "initial_state",
-            "max_failed_tasks",
-            "max_task_retries",
-            "farm_id",
-            "queue_id",
-            "storage_profile_id",
-        ]
+        params = DeadlineCloudJobSubmissionConfigParameter.get_param_names()
+        params.extend(DeadlineCloudJobSubmissionConfigAdvancedParameter.get_param_names())
+        params.extend(DeadlineCloudHostConfigParameter.get_param_names())
+        return params
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         exceptions = super().validate_before_workflow_run() or []
@@ -278,20 +203,34 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_completed = False
         deadline_client = self._get_client()
         job_details: Any = {}
+        lifecycle_status = "UNKNOWN"
         status = "UNKNOWN"
+
+        bad_lifecycle_statuses = ["CREATE_FAILED", "UPLOAD_FAILED", "UPDATE_FAILED", "ARCHIVED"]
 
         while not job_completed:
             job_details = deadline_client.get_job(jobId=job_id, queueId=queue_id, farmId=farm_id)
+            lifecycle_status = job_details.get("lifecycleStatus", "UNKNOWN")
+            msg = f"Lifecycle Status for Job ID {job_id}: {lifecycle_status}"
+            logger.info(msg)
             status = job_details.get("taskRunStatus", "UNKNOWN")
             msg = f"Task Run Status for Job ID {job_id}: {status}"
             logger.info(msg)
+
+            if lifecycle_status in bad_lifecycle_statuses:
+                break
 
             if status in ["SUCCEEDED", "FAILED", "CANCELED", "NOT_COMPATIBLE"]:
                 break
             time.sleep(1)
 
+        if lifecycle_status in bad_lifecycle_statuses:
+            msg = f"Job {job_id} failed with lifecycle status: {lifecycle_status}"
+            logger.error(msg)
+            raise RuntimeError(msg)
+
         if status != "SUCCEEDED":
-            msg = f"Job {job_id} did not complete successfully. Final status: {status}"
+            msg = f"Job {job_id} did not complete successfully. Final task run status: {status}"
             logger.error(msg)
             raise RuntimeError(msg)
 
@@ -424,6 +363,19 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_description = self.get_parameter_value("job_description")
         if job_description:
             job_template["description"] = job_description
+
+        job_template = self._reconcile_job_template_host_config(job_template)
+
+        return job_template
+
+    def _reconcile_job_template_host_config(self, job_template: dict[str, Any]) -> dict[str, Any]:
+        """Reconcile the job template with the host configuration."""
+        run_on_all_worker_hosts = self.get_parameter_value("run_on_all_worker_hosts")
+        if not run_on_all_worker_hosts:
+            host_config = self._host_config_params.get_host_config_job_template_dict()
+            if len(host_config) > 0:
+                for step in job_template["steps"]:
+                    step["hostRequirements"] = copy.deepcopy(host_config)
 
         return job_template
 

@@ -232,13 +232,14 @@ wheels = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.53.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#1c86433ca5329cff45badf1e1e122388f2d06c41" }
+version = "0.54.1"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#6ed1630f219d1098838210cd0ecfa238703d897e" }
 dependencies = [
     { name = "binaryornot" },
     { name = "fastapi" },
     { name = "griptape" },
     { name = "httpx" },
+    { name = "huggingface-hub" },
     { name = "json-repair" },
     { name = "mcp", extra = ["ws"] },
     { name = "packaging" },
@@ -246,6 +247,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "rich" },
     { name = "tomlkit" },
     { name = "typer" },
     { name = "uv" },

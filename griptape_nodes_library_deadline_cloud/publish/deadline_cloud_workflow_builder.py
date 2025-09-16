@@ -13,23 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
+from griptape_nodes.retained_mode.events.node_events import (
+    SerializeNodeToCommandsResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from publish import LIBRARY_NAME
 from publish.deadline_cloud_end_flow import DeadlineCloudEndFlow
 from publish.deadline_cloud_published_workflow import DeadlineCloudPublishedWorkflow
 from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 logger = logging.getLogger(__name__)
-
-LIBRARY_NAME = "AWS Deadline Cloud Library"
-
-
-@dataclass
-class DeadlineCloudJobDetails:
-    job_name: str = ""
-    job_description: str = ""
-    farm_id: str = ""
-    queue_id: str = ""
-    storage_profile_id: str = ""
 
 
 @dataclass
@@ -42,7 +35,9 @@ class DeadlineCloudWorkflowBuilderInput:
     workflow_name: str
     workflow_shape: dict[str, Any]
     executor_workflow_name: str
-    job_details: DeadlineCloudJobDetails = field(default_factory=lambda: DeadlineCloudJobDetails())
+    deadline_cloud_start_flow_input: dict[str, Any]
+    deadline_cloud_start_flow_node_commands: SerializeNodeToCommandsResultSuccess | None = None
+    unique_parameter_uuid_to_values: dict = field(default_factory=dict)
     libraries: list[str] = field(default_factory=list)
 
 
@@ -112,7 +107,7 @@ class DeadlineCloudWorkflowBuilder:
 """
         return script
 
-    def _build_simple_workflow_script(  # noqa: C901, PLR0912
+    def _build_simple_workflow_script(  # noqa: C901, PLR0912, PLR0915
         self, job_template: dict, workflow_shape: dict[str, Any], libraries: list[str]
     ) -> str:
         """Build a simple workflow creation script using PublishedWorkflow node.
@@ -151,7 +146,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromRequirementSpecifierRequest,
 )
-from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest
+from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, SetParameterValueRequest
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.workflow_events import SaveWorkflowRequest
 
@@ -172,10 +167,6 @@ def main():
             node_type="{DeadlineCloudStartFlow.__name__}",
             specific_library_name="{LIBRARY_NAME}",
             node_name="Deadline Cloud Start Flow",
-            metadata={{
-                "job_name": {self.workflow_builder_input.job_details.job_name!r},
-                "job_description": {self.workflow_builder_input.job_details.job_description!r},
-            }},
             initial_setup=True
         ))
         start_node_name = start_node_response.node_name
@@ -252,9 +243,11 @@ def main():
             for param in input_params:
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
-                param_config["parameter_name"] = param_config.pop("name")
+                param_name = param_config.pop("name")
+                param_config["parameter_name"] = param_name
                 param_config.pop("settable", None)  # Remove 'settable' if it exists
-                script += f"""
+                if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                    script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=True,
@@ -341,6 +334,32 @@ def main():
         source_parameter_name="{param["name"]}",
         target_node_name=end_node_name,
         target_parameter_name="{param["name"]}",
+        initial_setup=True
+    ))"""
+
+        script += """
+
+    # Set parameter values for Deadline Cloud Start Flow"""
+
+        if self.workflow_builder_input.deadline_cloud_start_flow_node_commands is not None:
+            script += f"""
+    unique_values_dict = {self.workflow_builder_input.unique_parameter_uuid_to_values}
+    """
+            items = self.workflow_builder_input.deadline_cloud_start_flow_input
+            # This ensures all job submission parameters are included
+            for param in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                if param not in items:
+                    items[param] = None
+            for param_name, param_value in items.items():
+                for (
+                    command
+                ) in self.workflow_builder_input.deadline_cloud_start_flow_node_commands.set_parameter_value_commands:
+                    if command.set_parameter_value_command.parameter_name == param_name:
+                        script += f"""
+    GriptapeNodes.handle_request(SetParameterValueRequest(
+        node_name=start_node_name,
+        parameter_name="{param_name}",
+        value=unique_values_dict.get({command.unique_value_uuid!r}, {param_value!r}),
         initial_setup=True
     ))"""
 
