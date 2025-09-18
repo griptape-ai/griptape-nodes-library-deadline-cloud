@@ -61,6 +61,7 @@ class DeadlineCloudJobTemplateGenerator:
         python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(library_paths)
 
         venv_script = """#!/bin/env bash
+set -e
 echo 'Setting up Python virtual environment...'
 python -m pip install --upgrade pip wheel setuptools
 echo 'Installing dependencies...'
