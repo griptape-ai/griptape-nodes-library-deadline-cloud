@@ -98,6 +98,24 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
                 tooltip="The storage profile ID for the Deadline Cloud Job.",
                 allowed_modes=allowed_modes,
             )
+            Parameter(
+                name="conda_channels",
+                input_types=["str"],
+                type="str",
+                default_value="conda-forge",
+                output_type="str",
+                tooltip="Conda channels to install packages from.",
+                allowed_modes=allowed_modes,
+            )
+            Parameter(
+                name="conda_packages",
+                input_types=["str"],
+                type="str",
+                default_value="python=3.12",
+                output_type="str",
+                tooltip="Conda packages install job.",
+                allowed_modes=allowed_modes,
+            )
 
         job_submission_config_group_advanced.ui_options = {"hide": False, "collapsed": True}
         self.node.add_node_element(job_submission_config_group_advanced)
@@ -112,4 +130,6 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
             "farm_id",
             "queue_id",
             "storage_profile_id",
+            "conda_channels",
+            "conda_packages",
         ]

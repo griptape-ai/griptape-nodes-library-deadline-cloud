@@ -475,6 +475,8 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
             "DataDir": {"path": root_dir},
             "LocationToRemap": {"path": relative_dir_path},
             "ModelsLocationToRemap": {"path": models_dir_path},
+            "CondaChannels": {"string": self.get_parameter_value("conda_channels")},
+            "CondaPackages": {"string": self.get_parameter_value("conda_packages")},
         }
 
         job_template = self._reconcile_job_template(job_template)
