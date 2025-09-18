@@ -18,7 +18,7 @@ from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from deadline.job_attachments.upload import S3AssetManager, S3AssetUploader
 from dotenv import set_key
 from dotenv.main import DotEnv
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.node_types import BaseNode, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -30,6 +30,10 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowResultSuccess,
     ListNodesInFlowRequest,
     ListNodesInFlowResultSuccess,
+)
+from griptape_nodes.retained_mode.events.node_events import (
+    SerializeNodeToCommandsRequest,
+    SerializeNodeToCommandsResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
@@ -50,7 +54,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     Version,
 )
 from huggingface_hub.constants import HF_HUB_CACHE
-from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
+from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, LIBRARY_NAME
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
     DeadlineCloudJobTemplateGenerator,
@@ -59,8 +63,6 @@ from publish.deadline_cloud_subprocess_executor import (
     DeadlineCloudSubprocessExecutor,
 )
 from publish.deadline_cloud_workflow_builder import (
-    LIBRARY_NAME,
-    DeadlineCloudJobDetails,
     DeadlineCloudWorkflowBuilder,
     DeadlineCloudWorkflowBuilderInput,
 )
@@ -70,6 +72,7 @@ if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 
 T = TypeVar("T")
@@ -88,7 +91,10 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self._published_workflow_file_name = published_workflow_file_name or f"{self._workflow_name}_aws_dc_executor"
         self.execute_on_publish = execute_on_publish
         self._job_template: dict[str, Any] = {}
-        self._create_run_input: dict[str, Any] = {}
+        self._deadline_cloud_start_flow_node_commands: SerializeNodeToCommandsResultSuccess | None = None
+        self._unique_parameter_uuid_to_values: dict = {}
+        self._set_parameter_value_commands_per_node: dict = {}
+        self._node_name_to_uuid: dict = {}
         self._subprocess_executor = DeadlineCloudSubprocessExecutor()
 
     def publish_workflow(self) -> ResultPayload:
@@ -101,6 +107,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.info("Workflow shape: %s", workflow_shape)
 
             self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
+            self._deadline_cloud_start_flow_node_commands = self._get_deadline_cloud_start_flow_node_commands(
+                self._unique_parameter_uuid_to_values
+            )
 
             # Package the workflow
             package_path = self._package_workflow(self._workflow_name)
@@ -739,6 +748,47 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.exception(details)
             raise RuntimeError(details) from e
 
+    def _get_deadline_cloud_start_flow_node_commands(
+        self, unique_parameter_uuid_to_values: dict
+    ) -> SerializeNodeToCommandsResultSuccess | None:
+        flow_manager = GriptapeNodes.FlowManager()
+        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        if result.failed():
+            details = f"Workflow '{self._workflow_name}' does not have a top-level flow."
+            raise ValueError(details)
+        flow_name = cast("GetTopLevelFlowResultSuccess", result).flow_name
+        if flow_name is None:
+            details = f"Workflow '{self._workflow_name}' does not have a top-level flow."
+            raise ValueError(details)
+
+        control_flow = flow_manager.get_flow_by_name(flow_name)
+        nodes = control_flow.nodes
+
+        dc_start_node: DeadlineCloudStartFlow | None = None
+
+        for node in nodes.values():
+            if node.metadata["library"] == LIBRARY_NAME and isinstance(node, StartNode):
+                dc_start_node = cast("DeadlineCloudStartFlow", node)
+
+        if dc_start_node is None:
+            logger.warning("No DeadlineCloudStartFlow node found.")
+            return None
+
+        serialize_node_to_commands_request = SerializeNodeToCommandsRequest(
+            node_name=dc_start_node.name,
+            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+        )
+        serialize_node_to_commands_result = GriptapeNodes.handle_request(serialize_node_to_commands_request)
+        if not isinstance(serialize_node_to_commands_result, SerializeNodeToCommandsResultSuccess):
+            details = f"Failed to serialize node '{dc_start_node.name}' to commands."
+            logger.error(details)
+            raise TypeError(details)
+
+        logger.debug("Serialized DeadlineCloudStartFlow node to commands successfully.")
+        logger.debug("Node commands: %s", serialize_node_to_commands_result.serialized_node_commands)
+        logger.debug("Node parameters: %s", serialize_node_to_commands_result.set_parameter_value_commands)
+        return serialize_node_to_commands_result
+
     def _generate_executor_workflow(
         self,
         relative_dir_path: str,
@@ -786,17 +836,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 workflow_name=self._workflow_name,
                 workflow_shape=workflow_shape,
                 executor_workflow_name=self._published_workflow_file_name,
-                job_details=DeadlineCloudJobDetails(
-                    job_name=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("job_name", ""),
-                    job_description=self._create_run_input.get("Deadline Cloud Start Flow", {}).get(
-                        "job_description", ""
-                    ),
-                    farm_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("farm_id", ""),
-                    queue_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get("queue_id", ""),
-                    storage_profile_id=self._create_run_input.get("Deadline Cloud Start Flow", {}).get(
-                        "storage_profile_id", ""
-                    ),
-                ),
+                deadline_cloud_start_flow_input=self._create_run_input["Deadline Cloud Start Flow"],
+                deadline_cloud_start_flow_node_commands=self._deadline_cloud_start_flow_node_commands,
+                unique_parameter_uuid_to_values=self._unique_parameter_uuid_to_values,
                 libraries=library_paths,
             )
         )
