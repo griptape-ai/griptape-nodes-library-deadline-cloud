@@ -15,4 +15,10 @@ class DeadlineCloudEndFlow(EndNode):
         super().__init__(name, metadata)
 
     def process(self) -> None:
-        pass
+        super().process()
+
+    @classmethod
+    def get_default_node_parameter_names(cls) -> list[str]:
+        """Get the names of the parameters configured on the node by default."""
+        # Execution Status Component parameters
+        return ["was_successful", "result_details"]
