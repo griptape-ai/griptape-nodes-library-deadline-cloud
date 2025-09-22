@@ -57,6 +57,24 @@ class DeadlineCloudJobTemplateGenerator:
             }
         )
 
+        parameter_definitions.append(
+            {
+                "name": "CondaChannels",
+                "type": "STRING",
+                "description": "Conda channels to install packages from",
+                "default": "conda-forge",
+            }
+        )
+
+        parameter_definitions.append(
+            {
+                "name": "CondaPackages",
+                "type": "STRING",
+                "description": "Conda packages install job",
+                "default": "python=3.12",
+            }
+        )
+
         # Generate Python execution script
         python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(library_paths)
 
@@ -161,6 +179,10 @@ def _set_config(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
 
     config_manager = GriptapeNodes.ConfigManager()
+    config_manager.set_config_value(
+        key="enable_workspace_file_watching",
+        value=False,
+    )
     config_manager.set_config_value(
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=libraries,

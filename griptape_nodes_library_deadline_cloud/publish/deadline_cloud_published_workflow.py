@@ -5,7 +5,7 @@ import json
 import logging
 import shutil
 import tempfile
-import time
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,9 +13,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.api import get_queue_user_boto3_session
 from deadline.job_attachments.download import OutputDownloader
 from deadline.job_attachments.models import JobAttachmentS3Settings
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from publish.base_deadline_cloud import BaseDeadlineCloud
+from publish.deadline_cloud_job_poller import DeadlineCloudJobDetails, DeadlineCloudJobPoller
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
 from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter import (
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
@@ -30,9 +32,17 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
+class PublishedWorkflowExecutionStatus(StrEnum):
+    """Status enum for published workflow execution."""
+
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    FAILURE = "FAILURE"
+
+
+class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
     def __init__(self, **kwargs) -> None:
-        ControlNode.__init__(self, **kwargs)
+        SuccessFailureNode.__init__(self, **kwargs)
         BaseDeadlineCloud.__init__(self, session=BaseDeadlineCloud._get_session())
 
         metadata = kwargs.get("metadata", {})
@@ -47,6 +57,16 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         self.relative_dir_path = metadata.get("relative_dir_path", "")
         self.models_dir_path = metadata.get("models_dir_path", "")
         self.workflow_shape = metadata.get("workflow_shape", {})
+
+        if attachments_dict is None or job_attachment_settings_dict is None:
+            self.add_node_element(
+                ParameterMessage(
+                    name="deadline_cloud_published_workflow_parameter_message",
+                    title="Deadline Cloud Published Workflow Configuration Warning",
+                    variant="warning",
+                    value=self.get_help_message(),
+                )
+            )
 
         # Add job config group
         self.job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(self, metadata)
@@ -108,16 +128,37 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         job_config_group.ui_options = {"hide": True}  # Hide the job config group by default.
         self.add_node_element(job_config_group)
 
+        # Add status parameters
+        self.status_component = ExecutionStatusComponent(
+            self,
+            was_successful_modes={ParameterMode.PROPERTY},
+            result_details_modes={ParameterMode.OUTPUT},
+            parameter_group_initially_collapsed=False,
+            result_details_tooltip="Details about the published workflow execution result",
+            result_details_placeholder="Details on the published workflow execution will be presented here.",
+        )
+
+    def get_help_message(self) -> str:
+        return (
+            "The Deadline Cloud Published Workflow node is intended to be auto-generated via publishing a Workflow.\n\n "
+            "To publish a Workflow to Deadline Cloud, you can:\n"
+            "   1. Configure a Workflow in the GUI with the Deadline Cloud Start Flow and End Flow Nodes\n"
+            "   2. Click the 'Publish' button (rocket icon, top right) to publish the workflow to Deadline Cloud\n"
+            "   3. Open the resulting Workflow in the GUI, which will have the Deadline Cloud Published Workflow node configured"
+        )
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "run_on_all_worker_hosts":
             self._host_config_params.set_host_config_param_visibility(visible=not value)
 
     @classmethod
-    def get_job_submission_parameter_names(cls) -> list[str]:
-        """Get the names of the job submission parameters."""
+    def get_default_node_parameter_names(cls) -> list[str]:
+        """Get the names of the parameters configured on the node by default."""
         params = DeadlineCloudJobSubmissionConfigParameter.get_param_names()
         params.extend(DeadlineCloudJobSubmissionConfigAdvancedParameter.get_param_names())
         params.extend(DeadlineCloudHostConfigParameter.get_param_names())
+        # Execution Status Component parameters
+        params.extend(["was_successful", "result_details"])
         return params
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
@@ -200,41 +241,22 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
         return job_id
 
     def _poll_job(self, job_id: str, queue_id: str, farm_id: str) -> Any:
-        job_completed = False
-        deadline_client = self._get_client()
-        job_details: Any = {}
-        lifecycle_status = "UNKNOWN"
-        status = "UNKNOWN"
+        def status_callback(job_details: DeadlineCloudJobDetails, elapsed_time: float) -> None:
+            self.append_value_to_parameter(
+                parameter_name=self.status_component._result_details.name,
+                value=f"\nJob Status - Lifecycle: {job_details.lifecycle_status}, Task Status: {job_details.task_run_status}, Elapsed Time: {elapsed_time}s",
+            )
 
-        bad_lifecycle_statuses = ["CREATE_FAILED", "UPLOAD_FAILED", "UPDATE_FAILED", "ARCHIVED"]
-
-        while not job_completed:
-            job_details = deadline_client.get_job(jobId=job_id, queueId=queue_id, farmId=farm_id)
-            lifecycle_status = job_details.get("lifecycleStatus", "UNKNOWN")
-            msg = f"Lifecycle Status for Job ID {job_id}: {lifecycle_status}"
-            logger.info(msg)
-            status = job_details.get("taskRunStatus", "UNKNOWN")
-            msg = f"Task Run Status for Job ID {job_id}: {status}"
-            logger.info(msg)
-
-            if lifecycle_status in bad_lifecycle_statuses:
-                break
-
-            if status in ["SUCCEEDED", "FAILED", "CANCELED", "NOT_COMPATIBLE"]:
-                break
-            time.sleep(1)
-
-        if lifecycle_status in bad_lifecycle_statuses:
-            msg = f"Job {job_id} failed with lifecycle status: {lifecycle_status}"
-            logger.error(msg)
-            raise RuntimeError(msg)
-
-        if status != "SUCCEEDED":
-            msg = f"Job {job_id} did not complete successfully. Final task run status: {status}"
-            logger.error(msg)
-            raise RuntimeError(msg)
-
-        return job_details
+        poller = DeadlineCloudJobPoller(
+            client=self._get_client(),
+            config=self._get_config_parser(),
+            job_id=job_id,
+            queue_id=queue_id,
+            farm_id=farm_id,
+            max_poll_interval=10,
+            status_callback=status_callback,
+        )
+        return poller.poll_job()
 
     def _get_static_files_directory(self) -> Path:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -445,67 +467,132 @@ class DeadlineCloudPublishedWorkflow(ControlNode, BaseDeadlineCloud):
 
         return combined
 
+    def _handle_execution_result(
+        self,
+        status: PublishedWorkflowExecutionStatus,
+        input_path: Path | None,
+        output_path: Path | None,
+        details: str,
+        exception: Exception | None = None,
+    ) -> None:
+        """Handle execution result for all cases."""
+        match status:
+            case PublishedWorkflowExecutionStatus.FAILURE:
+                failure_details = f"Published Workflow execution failed\nError: {details}"
+
+                if exception:
+                    failure_details += f"\nException type: {type(exception).__name__}"
+                    if exception.__cause__:
+                        failure_details += f"\nCause: {exception.__cause__}"
+
+                self._set_status_results(was_successful=False, result_details=f"{status}: {failure_details}")
+                msg = f"Error executing published workflow: {details}"
+                logger.error(msg)
+
+            case PublishedWorkflowExecutionStatus.SUCCESS:
+                result_details = f"Published Workflow executed successfully\nOutput path: {output_path}\n"
+                if input_path and input_path.exists():
+                    result_details += f"Input path: {input_path}\n"
+                if output_path and output_path.exists():
+                    result_details += f"Output path: {output_path}\n"
+
+                self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
+
+    def _handle_error_with_graceful_exit(
+        self, error_details: str, exception: Exception, input_path: Path | None, output_path: Path | None
+    ) -> None:
+        """Handle error with graceful exit if failure output is connected."""
+        self._handle_execution_result(
+            status=PublishedWorkflowExecutionStatus.FAILURE,
+            input_path=input_path,
+            output_path=output_path,
+            details=error_details,
+            exception=exception,
+        )
+        # Use the helper to handle exception based on connection status
+        self._handle_failure_exception(RuntimeError(error_details))
+
     def _process(self) -> None:
-        attachments = self.get_parameter_value("attachments")
-        job_template = self.get_parameter_value("job_template")
-        relative_dir_path = self.get_parameter_value("relative_dir_path")
-        models_dir_path = self.get_parameter_value("models_dir_path")
-        farm_id = self.get_parameter_value("farm_id")
-        queue_id = self.get_parameter_value("queue_id")
-        storage_profile_id = self.get_parameter_value("storage_profile_id")
+        # Reset execution state and result details at the start of each run
+        self._clear_execution_status()
+        input_path: Path | None = None
+        output_path: Path | None = None
 
-        root_dir = str(attachments["manifests"][0]["rootPath"])
-        input_json = self._collect_input_parameters()
+        try:
+            attachments = self.get_parameter_value("attachments")
+            job_template = self.get_parameter_value("job_template")
+            relative_dir_path = self.get_parameter_value("relative_dir_path")
+            models_dir_path = self.get_parameter_value("models_dir_path")
+            farm_id = self.get_parameter_value("farm_id")
+            queue_id = self.get_parameter_value("queue_id")
+            storage_profile_id = self.get_parameter_value("storage_profile_id")
 
-        storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
-            farm_id, queue_id, storage_profile_id
-        )
+            root_dir = str(attachments["manifests"][0]["rootPath"])
+            input_json = self._collect_input_parameters()
 
-        # Upload input JSON to S3 to avoid parameter size limits
-        logger.info("Uploading input JSON to S3 to avoid parameter size limits")
-        input_json_path, input_attachments = self._upload_input_json_to_s3(
-            input_json, farm_id, queue_id, storage_profile
-        )
+            storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
+                farm_id, queue_id, storage_profile_id
+            )
 
-        # Combine the original attachments with the input JSON attachments
-        combined_attachments = self._combine_attachments(attachments, input_attachments)
+            # Upload input JSON to S3 to avoid parameter size limits
+            logger.info("Uploading input JSON to S3 to avoid parameter size limits")
+            input_json_path, input_attachments = self._upload_input_json_to_s3(
+                input_json, farm_id, queue_id, storage_profile
+            )
+            input_path = Path(input_json_path).parent
+            output_path = input_path / "output"
 
-        job_parameters = {
-            "InputFile": {"path": input_json_path},
-            "DataDir": {"path": root_dir},
-            "LocationToRemap": {"path": relative_dir_path},
-            "ModelsLocationToRemap": {"path": models_dir_path},
-            "CondaChannels": {"string": self.get_parameter_value("conda_channels")},
-            "CondaPackages": {"string": self.get_parameter_value("conda_packages")},
-        }
+            # Combine the original attachments with the input JSON attachments
+            combined_attachments = self._combine_attachments(attachments, input_attachments)
 
-        job_template = self._reconcile_job_template(job_template)
-        job_id = self._submit_job_with_attachments(
-            attachments=combined_attachments,
-            farm_id=farm_id,
-            queue_id=queue_id,
-            job_template=job_template,
-            job_parameters=job_parameters,
-            storage_profile=storage_profile,
-        )
+            job_parameters = {
+                "InputFile": {"path": input_json_path},
+                "DataDir": {"path": root_dir},
+                "LocationToRemap": {"path": relative_dir_path},
+                "ModelsLocationToRemap": {"path": models_dir_path},
+                "CondaChannels": {"string": self.get_parameter_value("conda_channels")},
+                "CondaPackages": {"string": self.get_parameter_value("conda_packages")},
+            }
 
-        self._poll_job(
-            job_id=job_id,
-            queue_id=queue_id,
-            farm_id=farm_id,
-        )
+            job_template = self._reconcile_job_template(job_template)
+            job_id = self._submit_job_with_attachments(
+                attachments=combined_attachments,
+                farm_id=farm_id,
+                queue_id=queue_id,
+                job_template=job_template,
+                job_parameters=job_parameters,
+                storage_profile=storage_profile,
+            )
 
-        output = self._get_workflow_output(
-            farm_id=farm_id,
-            job_id=job_id,
-            queue_id=queue_id,
-        )
-        self._map_output_parameters(output)
+            self._poll_job(
+                job_id=job_id,
+                queue_id=queue_id,
+                farm_id=farm_id,
+            )
 
-        input_path = Path(input_json_path)
-        if input_path.exists():
-            input_path.unlink(missing_ok=True)
-            shutil.rmtree(input_path.parent, ignore_errors=True)
+            output = self._get_workflow_output(
+                farm_id=farm_id,
+                job_id=job_id,
+                queue_id=queue_id,
+            )
+            self._map_output_parameters(output)
+
+            input_path = Path(input_json_path)
+            if input_path.exists():
+                input_path.unlink(missing_ok=True)
+                shutil.rmtree(input_path.parent, ignore_errors=True)
+
+            self._handle_execution_result(
+                status=PublishedWorkflowExecutionStatus.SUCCESS,
+                input_path=input_path,
+                output_path=output_path,
+                details=f"Published workflow executed successfully with Job ID: {job_id}",
+            )
+        except Exception as e:
+            details = f"Error during published workflow execution: {e}"
+            logger.exception(details)
+            self._handle_error_with_graceful_exit(details, e, input_path, output_path)
+            return
 
     def process(
         self,

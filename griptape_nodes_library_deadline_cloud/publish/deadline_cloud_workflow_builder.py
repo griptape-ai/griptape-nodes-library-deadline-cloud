@@ -203,7 +203,7 @@ def main():
         non_deadline_params = [
             param
             for param in input_params
-            if param["name"] not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names()
+            if param["name"] not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names()
         ]
 
         if len(non_deadline_params) == 0:
@@ -218,7 +218,7 @@ def main():
                 param_name = param_config.pop("name")
                 param_config.pop("settable", None)  # Remove 'settable' if it exists
                 param_config["parameter_name"] = param_name
-                if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     # Do not double add job submission parameters
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
@@ -246,7 +246,7 @@ def main():
                 param_name = param_config.pop("name")
                 param_config["parameter_name"] = param_name
                 param_config.pop("settable", None)  # Remove 'settable' if it exists
-                if param_name not in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+                if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
@@ -260,9 +260,11 @@ def main():
             for param in output_params:
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
-                param_config["parameter_name"] = param_config.pop("name")
+                param_name = param_config.pop("name")
+                param_config["parameter_name"] = param_name
                 param_config.pop("settable", None)  # Remove 'settable' if it exists
-                script += f"""
+                if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
+                    script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=False,
@@ -285,9 +287,11 @@ def main():
             for param in output_params:
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
-                param_config["parameter_name"] = param_config.pop("name")
+                param_name = param_config.pop("name")
+                param_config["parameter_name"] = param_name
                 param_config.pop("settable", None)  # Remove 'settable' if it exists
-                script += f"""
+                if param_name not in DeadlineCloudEndFlow.get_default_node_parameter_names():
+                    script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
                 mode_allowed_input=True,
@@ -301,7 +305,7 @@ def main():
     # Create connections between StartNode and DeadlineCloudPublishedWorkflow"""
 
         # Add connections for submission parameters
-        for param_name in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+        for param_name in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
             script += f"""
     GriptapeNodes.handle_request(CreateConnectionRequest(
         source_node_name=start_node_name,
@@ -337,6 +341,17 @@ def main():
         initial_setup=True
     ))"""
 
+        control_flow: dict = {"exec_out": "exec_in", "failure": "failed"}
+        for key, val in control_flow.items():
+            script += f"""
+    GriptapeNodes.handle_request(CreateConnectionRequest(
+        source_node_name=published_wf_name,
+        source_parameter_name="{key}",
+        target_node_name=end_node_name,
+        target_parameter_name="{val}",
+        initial_setup=True
+    ))"""
+
         script += """
 
     # Set parameter values for Deadline Cloud Start Flow"""
@@ -347,7 +362,7 @@ def main():
     """
             items = self.workflow_builder_input.deadline_cloud_start_flow_input
             # This ensures all job submission parameters are included
-            for param in DeadlineCloudPublishedWorkflow.get_job_submission_parameter_names():
+            for param in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                 if param not in items:
                     items[param] = None
             for param_name, param_value in items.items():

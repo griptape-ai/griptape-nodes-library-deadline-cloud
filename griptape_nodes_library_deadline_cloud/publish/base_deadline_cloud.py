@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from configparser import ConfigParser
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import boto3
@@ -38,6 +39,20 @@ class BaseDeadlineCloud:
             return boto3.Session(profile_name=profile_name, region_name=region_name)
 
         return get_boto3_session()
+
+    @classmethod
+    def _get_config_parser(cls) -> ConfigParser:
+        """Get a ConfigParser for the given file path."""
+        config = ConfigParser(
+            defaults={
+                "aws_profile_name": cls._get_config_value(
+                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+                    "profile_name",
+                    default=get_setting_default("defaults.aws_profile_name"),
+                )
+            }
+        )
+        return config
 
     @classmethod
     def _get_config_value(cls, service: str, value: str, default: Any | None = None) -> Any:
@@ -80,9 +95,14 @@ class BaseDeadlineCloud:
     def _get_client(self) -> BaseClient:
         """Get cached Deadline Cloud client."""
         if self._client is None:
-            self._client = self._session.client(
-                "deadline", region_name=self._get_config_value(DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "region_name")
-            )
+            try:
+                self._client = self._session.client(
+                    "deadline", region_name=self._get_config_value(DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "region_name")
+                )
+            except Exception as e:
+                details = "Failed to create Deadline Cloud client. Please ensure your AWS credentials are configured and refreshed."
+                logger.error(details)
+                raise RuntimeError(details) from e
         return self._client
 
     def _get_storage_profile_for_queue(
