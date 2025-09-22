@@ -9,11 +9,12 @@ To configure your settings within the Griptape Nodes IDE:
 1. Open the **Settings** menu.
 1. Navigate to the **Engine Settings** panel.
 1. Configure your:
-   1. Farm ID
-   1. Queue ID
+   1. Default Farm ID
+   1. Default Queue ID
    1. Monitor URL
    1. Region name
    1. Profile name
+   1. Default Storage profile ID (optional)
 
 ## Add your library to your installed Engine
 
@@ -34,3 +35,18 @@ After you've completed those and you have your engine up and running:
    ![See Libraries](./images/see_libraries.png)
 1. Your newly registered library should appear! Drag and drop nodes to use them!
    ![Library Display](./images/final_image.png)
+
+## Usage
+
+After configuring your Deadline Cloud settings and defaults, you can publish workflows to Deadline Cloud:
+
+1. Author a Workflow in the GUI Editor, using:
+   1. A Deadline Cloud Start Flow node to expose the input Parameters to your Workflow
+      1. Also specify any Deadline Cloud Job configuration you desire on this node
+   1. A Deadline Cloud End Flow node to expose the output Parameters of your Workflow
+1. Click the 'Publish' button in the top right of the Editor (rocket ship icon)
+   1. Choose the AWS Deadline Cloud Library target for publishing to
+   1. (Optional) Enter a name for the new workflow file which will be generated as a result of publishing
+   1. (Optional) Unselect `Execute workflow immediately after publishing` if you wish to run the published workflow from the Editor
+1. Open the newly generated workflow file in the Editor from the publish operation
+1. Click the `Run Workflow` button in the Editor to run the published workflow on Deadline Cloud as a Job
