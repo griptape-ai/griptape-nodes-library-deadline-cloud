@@ -165,17 +165,35 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
         exceptions = super().validate_before_workflow_run() or []
 
         try:
-            if not self.get_parameter_value("job_template"):
+            job_template = self.get_parameter_value("job_template")
+            if not job_template or len(job_template) == 0:
                 msg = "Job template is not set. Configure the Node with a valid Deadline Cloud Job Template before running."
                 exceptions.append(ValueError(msg))
 
-            if not self.get_parameter_value("job_attachment_settings"):
+            job_attachment_settings = self.get_parameter_value("job_attachment_settings")
+            if job_attachment_settings is None or len(job_attachment_settings) == 0:
                 msg = "Job attachment settings are not set. Configure the Node with valid Job Attachment Settings before running."
                 exceptions.append(ValueError(msg))
 
-            if not self.get_parameter_value("attachments"):
+            attachments = self.get_parameter_value("attachments")
+            if attachments is None or len(attachments) == 0:
                 msg = "Attachments are not set. Configure the Node with valid Attachments before running."
                 exceptions.append(ValueError(msg))
+
+            farm_id = self.get_parameter_value("farm_id")
+            if farm_id is None or farm_id == "":
+                msg = "Farm ID is not set. Configure the Node with a valid Farm ID before running."
+                exceptions.append(ValueError(msg))
+
+            queue_id = self.get_parameter_value("queue_id")
+            if queue_id is None or queue_id == "":
+                msg = "Queue ID is not set. Configure the Node with a valid Queue ID before running."
+                exceptions.append(ValueError(msg))
+
+            if farm_id and queue_id:
+                farm_queue_exception = self._validate_farm_and_queue_permissions(farm_id, queue_id)
+                if farm_queue_exception:
+                    exceptions.append(farm_queue_exception)
 
         except Exception as e:
             # Add any exceptions to your list to return
@@ -183,6 +201,26 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         # if there are exceptions, they will display when the user tries to run the flow with the node.
         return exceptions if exceptions else None
+
+    def _validate_farm_and_queue_permissions(self, farm_id: str, queue_id: str) -> Exception | None:
+        """Validate that the user has permissions to the specified farm and queue."""
+        try:
+            # Validate farm access
+            deadline_client = self._get_client()
+            deadline_client.list_jobs(
+                farmId=farm_id,
+                queueId=queue_id,
+                maxResults=1,
+            )
+
+        except (ClientError, BotoCoreError) as e:
+            details = f"AWS API error validating farm and queue permissions: {e}"
+            logger.error(details)
+            return RuntimeError(details)
+        except Exception as e:
+            details = f"Unexpected error validating farm and queue permissions: {e}"
+            logger.exception(details)
+            return RuntimeError(details)
 
     def _submit_job_with_attachments(  # noqa: PLR0913
         self,
