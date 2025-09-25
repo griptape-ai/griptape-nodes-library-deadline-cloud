@@ -79,5 +79,8 @@
         "display_name": "AWS Deadline Cloud Start Flow"
       }
     }
+  ],
+  "workflows": [
+    "workflows/templates/deadline_cloud_hello_world.py"
   ]
 }
