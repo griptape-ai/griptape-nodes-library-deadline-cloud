@@ -13,6 +13,8 @@ from griptape_nodes.retained_mode.griptape_nodes import (
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from botocore.client import BaseClient
     from deadline.job_attachments.models import StorageProfile
 
@@ -36,7 +38,12 @@ class BaseDeadlineCloud:
         )
         region_name = cls._get_config_value(DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "region_name", default="us-east-1")
         if profile_name != "" and region_name != "":
-            return boto3.Session(profile_name=profile_name, region_name=region_name)
+            try:
+                return boto3.Session(profile_name=profile_name, region_name=region_name)
+
+            except Exception:
+                msg = f"Failed to create boto3 session with profile '{profile_name}' and region '{region_name}'."
+                logger.exception(msg)
 
         return get_boto3_session()
 
@@ -82,21 +89,42 @@ class BaseDeadlineCloud:
     def _queue_to_name_and_id(cls, queue: Any) -> str:
         return f"{queue['displayName']} ({queue['queueId']})"
 
+    def _safe_api_call(self, api_func: Callable, *args, **kwargs) -> Any | None:
+        """Common error handling for API calls. Returns None on error."""
+        try:
+            return api_func(*args, **kwargs)
+        except Exception as e:
+            msg = f"API call failed: {e}"
+            logger.exception(msg)
+            return None
+
     def list_farms(self) -> Any:
-        """List all farms in the Deadline Cloud."""
-        return self._get_client().list_farms()["farms"]
+        """List all farms in Deadline Cloud."""
+        result = self._safe_api_call(lambda: self._get_client().list_farms())
+        return result["farms"] if result else []
 
     def list_queues(self, farm_id: str) -> Any:
-        """List all queues in the Deadline Cloud."""
-        return self._get_client().list_queues(farmId=farm_id)["queues"]
+        """List all queues in Deadline Cloud."""
+        result = self._safe_api_call(lambda: self._get_client().list_queues(farmId=farm_id))
+        return result["queues"] if result else []
+
+    def list_storage_profiles(self, farm_id: str, queue_id: str) -> Any:
+        """List all storage profiles for the queue in Deadline Cloud."""
+        result = self._safe_api_call(
+            lambda: self._get_client().list_storage_profiles_for_queue(farmId=farm_id, queueId=queue_id)
+        )
+        return result["storageProfiles"] if result else []
 
     def search_jobs(self, farm_id: str, queue_id: str, page_size: int = 100, item_offset: int = 0) -> Any:
-        return self._get_client().search_jobs(
-            farmId=farm_id,
-            queueIds=[queue_id],
-            pageSize=page_size,
-            itemOffset=item_offset,
-        )["jobs"]
+        result = self._safe_api_call(
+            lambda: self._get_client().search_jobs(
+                farmId=farm_id,
+                queueIds=[queue_id],
+                pageSize=page_size,
+                itemOffset=item_offset,
+            )
+        )
+        return result["jobs"] if result else []
 
     def _get_client(self) -> BaseClient:
         """Get cached Deadline Cloud client."""

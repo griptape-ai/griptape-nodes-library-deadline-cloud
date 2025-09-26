@@ -39,6 +39,7 @@ class DeadlineCloudStartFlow(StartNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "run_on_all_worker_hosts":
             self._host_config_params.set_host_config_param_visibility(visible=not value)
+        self._job_submission_config_advanced_params.after_value_set(parameter, value)
 
     def process(self) -> None:
         pass
