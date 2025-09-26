@@ -59,6 +59,11 @@ ignore = [
   "RET504",  # Intentional
   "PLC0415", # Intentional
 ]
+exclude = [
+  ".venv",
+  "**/.venv",
+  "griptape_nodes_library_deadline_cloud/workflows/**"
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -75,6 +80,7 @@ exclude = [
   "**/node_modules",
   "**/__pycache__",
   "**/.*",
+  "griptape_nodes_library_deadline_cloud/workflows"
 ]
 pythonVersion = "3.12"
 reportIncompatibleMethodOverride = false
