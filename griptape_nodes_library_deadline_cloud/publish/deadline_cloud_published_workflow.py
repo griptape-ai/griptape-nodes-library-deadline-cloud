@@ -206,12 +206,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
         """Validate that the user has permissions to the specified farm and queue."""
         try:
             # Validate farm access
-            deadline_client = self._get_client()
-            deadline_client.list_jobs(
-                farmId=farm_id,
-                queueId=queue_id,
-                maxResults=1,
-            )
+            self.search_jobs(farm_id=farm_id, queue_id=queue_id, page_size=1)
 
         except (ClientError, BotoCoreError) as e:
             details = f"AWS API error validating farm and queue permissions: {e}"

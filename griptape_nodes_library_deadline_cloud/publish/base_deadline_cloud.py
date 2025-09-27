@@ -84,13 +84,19 @@ class BaseDeadlineCloud:
 
     def list_farms(self) -> Any:
         """List all farms in the Deadline Cloud."""
-        client = self._get_client()
-        return client.list_farms()["farms"]
+        return self._get_client().list_farms()["farms"]
 
     def list_queues(self, farm_id: str) -> Any:
         """List all queues in the Deadline Cloud."""
-        client = self._get_client()
-        return client.list_queues(farmId=farm_id)["queues"]
+        return self._get_client().list_queues(farmId=farm_id)["queues"]
+
+    def search_jobs(self, farm_id: str, queue_id: str, page_size: int = 100, item_offset: int = 0) -> Any:
+        return self._get_client().search_jobs(
+            farmId=farm_id,
+            queueIds=[queue_id],
+            pageSize=page_size,
+            itemOffset=item_offset,
+        )["jobs"]
 
     def _get_client(self) -> BaseClient:
         """Get cached Deadline Cloud client."""
