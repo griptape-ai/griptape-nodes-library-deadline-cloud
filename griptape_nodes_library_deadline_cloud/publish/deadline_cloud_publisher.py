@@ -59,9 +59,6 @@ from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
     DeadlineCloudJobTemplateGenerator,
 )
-from publish.deadline_cloud_subprocess_executor import (
-    DeadlineCloudSubprocessExecutor,
-)
 from publish.deadline_cloud_workflow_builder import (
     DeadlineCloudWorkflowBuilder,
     DeadlineCloudWorkflowBuilderInput,
@@ -95,7 +92,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self._unique_parameter_uuid_to_values: dict = {}
         self._set_parameter_value_commands_per_node: dict = {}
         self._node_name_to_uuid: dict = {}
-        self._subprocess_executor = DeadlineCloudSubprocessExecutor()
 
     def publish_workflow(self) -> ResultPayload:
         try:
@@ -127,9 +123,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 job_attachment_settings=job_attachment_settings,
                 workflow_shape=workflow_shape,
             )
-
-            if self.execute_on_publish:
-                self._invoke_executor_workflow(executor_workflow_path, self._create_run_input)
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
@@ -203,10 +196,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     models.append(trimmed_value)
 
         return models
-
-    def _invoke_executor_workflow(self, executor_workflow_path: Path, workflow_input: dict[str, Any] | None) -> None:
-        # Execute the script in a background thread without waiting for completion
-        self._subprocess_executor.execute_workflow(executor_workflow_path, workflow_input)
 
     def _validate_workflow(self, workflow_name: str) -> Workflow:
         """Validate the workflow before publishing."""
