@@ -103,7 +103,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             self._validate_workflow(self._workflow_name)
 
             # Get the workflow shape
-            workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name, include_control_params=True)
+            workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(
+                self._workflow_name, include_control_params=True
+            )
             logger.info("Workflow shape: %s", workflow_shape)
 
             self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)

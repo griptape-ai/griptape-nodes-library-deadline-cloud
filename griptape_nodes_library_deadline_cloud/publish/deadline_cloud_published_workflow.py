@@ -311,7 +311,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                     workflow_file_path = Path(root_path) / output_file
                     with workflow_file_path.open(encoding="utf-8") as f:
                         workflow_output = json.load(f)
-                    workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
+                    # workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
                 elif "output" in output_file and "staticfiles" in output_file:
                     static_file_path = Path(root_path) / output_file
                     static_dir = self._get_static_files_directory()
@@ -409,7 +409,11 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                             self.parameter_output_values[param_name] = param_value
                             logger.info("Set output parameter %s = %s", param_name, param_value)
                         else:
-                            logger.warning("Output parameter '%s' value not found in output shape for node '%s'", param_name, node_name)
+                            logger.warning(
+                                "Output parameter '%s' value not found in output shape for node '%s'",
+                                param_name,
+                                node_name,
+                            )
 
     def _reconcile_job_template(self, job_template: dict[str, Any]) -> dict[str, Any]:
         """Reconcile the job template with the parameters."""
