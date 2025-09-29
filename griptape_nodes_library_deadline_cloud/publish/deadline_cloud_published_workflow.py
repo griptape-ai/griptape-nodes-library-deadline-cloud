@@ -408,6 +408,8 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                             )
                             self.parameter_output_values[param_name] = param_value
                             logger.info("Set output parameter %s = %s", param_name, param_value)
+                        else:
+                            logger.warning("Output parameter '%s' value not found in output shape for node '%s'", param_name, node_name)
 
     def _reconcile_job_template(self, job_template: dict[str, Any]) -> dict[str, Any]:
         """Reconcile the job template with the parameters."""
