@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from deadline.client.config import get_setting_default
@@ -5,19 +6,41 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import BaseNode
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
+from publish.deadline_cloud_resource_options import DeadlineCloudResourceOptions
+
+logger = logging.getLogger(__name__)
 
 
-class DeadlineCloudJobSubmissionConfigAdvancedParameter:
+class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
     def __init__(
         self, node: BaseNode, metadata: dict[Any, Any] | None = None, allowed_modes: set[ParameterMode] | None = None
     ) -> None:
+        BaseDeadlineCloud.__init__(self, session=BaseDeadlineCloud._get_session())
         self.node = node
         if metadata is None:
             metadata = {}
 
-        farm_id = metadata.get("farm_id", "")
-        queue_id = metadata.get("queue_id", "")
-        storage_profile_id = metadata.get("storage_profile_id", "")
+        farm_id = metadata.get(
+            "farm_id",
+            BaseDeadlineCloud._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
+            ),
+        )
+        queue_id = metadata.get(
+            "queue_id",
+            BaseDeadlineCloud._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
+            ),
+        )
+        self.updating_queue_id_lock = False
+        storage_profile_id = metadata.get(
+            "storage_profile_id",
+            BaseDeadlineCloud._get_config_value(
+                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+                "storage_profile_id",
+                default=get_setting_default("settings.storage_profile_id"),
+            ),
+        )
 
         # Add advanced job config group
         with ParameterGroup(name="Job Submission Config Advanced") as job_submission_config_group_advanced:
@@ -62,11 +85,14 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=farm_id
-                if farm_id != ""
-                else BaseDeadlineCloud._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
-                ),
+                default_value=farm_id,
+                traits={
+                    DeadlineCloudResourceOptions(
+                        choices=list(self._get_farm_choices_values_map().keys()),
+                        choices_value_lookup=self._get_farm_choices_values_map(),
+                        value_field="farmId",
+                    )
+                },
                 tooltip="The farm to use for the Deadline Cloud Job.",
                 allowed_modes=allowed_modes,
             )
@@ -75,11 +101,8 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=queue_id
-                if queue_id != ""
-                else BaseDeadlineCloud._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
-                ),
+                default_value=queue_id,
+                traits={self._get_queue_id_options(farm_id=farm_id)},
                 tooltip="The queue to use for the Deadline Cloud Job.",
                 allowed_modes=allowed_modes,
             )
@@ -88,13 +111,8 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
                 input_types=["str"],
                 type="str",
                 output_type="str",
-                default_value=storage_profile_id
-                if storage_profile_id != ""
-                else BaseDeadlineCloud._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
-                    "storage_profile_id",
-                    default=get_setting_default("settings.storage_profile_id"),
-                ),
+                default_value=storage_profile_id,
+                traits={self._get_storage_profile_id_options(farm_id=farm_id, queue_id=queue_id)},
                 tooltip="The storage profile ID for the Deadline Cloud Job.",
                 allowed_modes=allowed_modes,
             )
@@ -120,6 +138,31 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
         job_submission_config_group_advanced.ui_options = {"hide": False, "collapsed": True}
         self.node.add_node_element(job_submission_config_group_advanced)
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "farm_id":
+            queue_choices = self._get_queue_choices_values_map(farm_id=value)
+            queue_default = next(iter(queue_choices.keys())) if queue_choices else ""
+            # Lock to prevent cascading updates
+            self.updating_queue_id_lock = True
+            self._update_option_choices(
+                param="queue_id",
+                choices=list(queue_choices.keys()),
+                choices_value_lookup=queue_choices,
+                default=queue_default,
+            )
+            new_queue_id = str(queue_choices.get(queue_default))
+            self._update_storage_profile_id(farm_id=value, queue_id=new_queue_id)
+            self.updating_queue_id_lock = False
+        if parameter.name == "queue_id" and not self.updating_queue_id_lock:
+            farm_id = self.node.get_parameter_value("farm_id")
+            storage_profile_choices = self._get_storage_profile_choices_values_map(farm_id=farm_id, queue_id=value)
+            self._update_option_choices(
+                param="storage_profile_id",
+                choices=list(storage_profile_choices.keys()),
+                choices_value_lookup=storage_profile_choices,
+                default=next(iter(storage_profile_choices.keys())),
+            )
+
     @classmethod
     def get_param_names(cls) -> list[str]:
         return [
@@ -133,3 +176,124 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter:
             "conda_channels",
             "conda_packages",
         ]
+
+    def _update_storage_profile_id(self, farm_id: str, queue_id: str) -> None:
+        storage_profile_choices = self._get_storage_profile_choices_values_map(farm_id=farm_id, queue_id=queue_id)
+        self._update_option_choices(
+            param="storage_profile_id",
+            choices=list(storage_profile_choices.keys()),
+            choices_value_lookup=storage_profile_choices,
+            default=next(iter(storage_profile_choices.keys())),
+        )
+
+    def _get_choices_values_map_fallback(self) -> dict:
+        """The fallback choices/values map if no farms, queues, or storage profiles are found.
+
+        This is important especially when running in the Published environment, since credentials may not be available.
+        """
+        return {"None": None}
+
+    def _get_farm_choices_values_map(self) -> dict:
+        farms = self.list_farms()
+        return (
+            {x["displayName"]: x["farmId"] for x in farms}
+            if len(farms) > 0
+            else self._get_choices_values_map_fallback()
+        )
+
+    def _get_queue_choices_values_map(self, farm_id: str) -> dict:
+        queues = []
+        if farm_id != "":
+            try:
+                queues = self.list_queues(farm_id=farm_id)
+            except Exception:
+                msg = f"Failed to list queues for farm '{farm_id}'"
+                logger.exception(msg)
+        return (
+            {x["displayName"]: x["queueId"] for x in queues}
+            if len(queues) > 0
+            else self._get_choices_values_map_fallback()
+        )
+
+    def _get_storage_profile_choices_values_map(self, farm_id: str, queue_id: str) -> dict:
+        storage_profiles = []
+        if farm_id != "" and queue_id != "":
+            try:
+                storage_profiles = self.list_storage_profiles(farm_id=farm_id, queue_id=queue_id)
+            except Exception:
+                msg = f"Failed to list storage profiles for farm '{farm_id}' and queue '{queue_id}'"
+                logger.exception(msg)
+        return (
+            {x["displayName"]: x["storageProfileId"] for x in storage_profiles}
+            if len(storage_profiles) > 0
+            else self._get_choices_values_map_fallback()
+        )
+
+    def _get_queue_id_options(self, farm_id: str | None = None) -> DeadlineCloudResourceOptions:
+        if farm_id is None:
+            farm_id = self.node.get_parameter_value("farm_id")
+
+        choices: list[str] = []
+        choices_value_lookup: dict = {}
+        if farm_id is not None and farm_id != "":
+            queue_choices_value_map = self._get_queue_choices_values_map(farm_id=farm_id)
+            choices = list(queue_choices_value_map.keys())
+            choices_value_lookup = queue_choices_value_map
+        return DeadlineCloudResourceOptions(
+            choices=choices,
+            choices_value_lookup=choices_value_lookup,
+            value_field="queueId",
+        )
+
+    def _get_storage_profile_id_options(
+        self, farm_id: str | None = None, queue_id: str | None = None
+    ) -> DeadlineCloudResourceOptions:
+        if farm_id is None:
+            farm_id = self.node.get_parameter_value("farm_id")
+        if queue_id is None:
+            queue_id = self.node.get_parameter_value("queue_id")
+
+        choices_values_fallback = self._get_choices_values_map_fallback()
+        choices: list[str] = ["None"]
+        choices_value_lookup: dict = choices_values_fallback
+        if farm_id is not None and farm_id != "" and queue_id is not None and queue_id != "":
+            storage_profile_choices_value_map = self._get_storage_profile_choices_values_map(
+                farm_id=farm_id, queue_id=queue_id
+            )
+            choices = list(storage_profile_choices_value_map.keys())
+            choices_value_lookup = storage_profile_choices_value_map
+            if len(choices) == 0:
+                choices = ["None"]
+                choices_value_lookup = choices_values_fallback
+        return DeadlineCloudResourceOptions(
+            choices=choices,
+            choices_value_lookup=choices_value_lookup,
+            value_field="storageProfileId",
+        )
+
+    def _update_option_choices(self, param: str, choices: list[str], choices_value_lookup: dict, default: str) -> None:
+        parameter = self.node.get_parameter_by_name(param)
+        if parameter is not None:
+            # Find the DeadlineCloudResourceOptions trait by type since element_id is a UUID
+            traits = parameter.find_elements_by_type(DeadlineCloudResourceOptions)
+            if traits:
+                trait = traits[0]  # Take the first Options trait
+                trait.choices = choices
+                trait.choices_value_lookup = choices_value_lookup
+                # Update the manually set UI options to include the new simple_dropdown
+                if hasattr(parameter, "_ui_options") and parameter._ui_options:
+                    parameter._ui_options["simple_dropdown"] = choices
+
+                if default in choices:
+                    parameter.default_value = default
+                    self.node.set_parameter_value(param, default)
+                else:
+                    msg = f"Default choice '{default}' is not in the provided choices."
+                    raise ValueError(msg)
+
+            else:
+                msg = f"No DeadlineCloudResourceOptions trait found for parameter '{param}'."
+                raise ValueError(msg)
+        else:
+            msg = f"Parameter '{param}' not found for updating choices."
+            raise ValueError(msg)
