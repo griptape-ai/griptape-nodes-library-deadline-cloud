@@ -1,10 +1,8 @@
 import logging
 from typing import Any
 
-from deadline.client.config import get_setting_default
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_resource_options import DeadlineCloudResourceOptions
 
@@ -22,24 +20,16 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
 
         farm_id = metadata.get(
             "farm_id",
-            BaseDeadlineCloud._get_config_value(
-                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
-            ),
+            BaseDeadlineCloud._get_default_farm_id(),
         )
         queue_id = metadata.get(
             "queue_id",
-            BaseDeadlineCloud._get_config_value(
-                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
-            ),
+            BaseDeadlineCloud._get_default_queue_id(),
         )
         self.updating_queue_id_lock = False
         storage_profile_id = metadata.get(
             "storage_profile_id",
-            BaseDeadlineCloud._get_config_value(
-                DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
-                "storage_profile_id",
-                default=get_setting_default("settings.storage_profile_id"),
-            ),
+            BaseDeadlineCloud._get_default_storage_profile_id(),
         )
 
         # Add advanced job config group
@@ -138,10 +128,16 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
         job_submission_config_group_advanced.ui_options = {"hide": False, "collapsed": True}
         self.node.add_node_element(job_submission_config_group_advanced)
 
+    def _get_default_choice(self, choices_map: dict, default_value: Any) -> str:
+        """Get the default choice key from a choices map, falling back to first key if default not found."""
+        if default_value in choices_map.values():
+            return next(key for key, val in choices_map.items() if val == default_value)
+        return next(iter(choices_map.keys())) if choices_map else ""
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "farm_id":
             queue_choices = self._get_queue_choices_values_map(farm_id=value)
-            queue_default = next(iter(queue_choices.keys())) if queue_choices else ""
+            queue_default = self._get_default_choice(queue_choices, BaseDeadlineCloud._get_default_queue_id())
             # Lock to prevent cascading updates
             self.updating_queue_id_lock = True
             self._update_option_choices(
@@ -155,13 +151,7 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
             self.updating_queue_id_lock = False
         if parameter.name == "queue_id" and not self.updating_queue_id_lock:
             farm_id = self.node.get_parameter_value("farm_id")
-            storage_profile_choices = self._get_storage_profile_choices_values_map(farm_id=farm_id, queue_id=value)
-            self._update_option_choices(
-                param="storage_profile_id",
-                choices=list(storage_profile_choices.keys()),
-                choices_value_lookup=storage_profile_choices,
-                default=next(iter(storage_profile_choices.keys())),
-            )
+            self._update_storage_profile_id(farm_id=farm_id, queue_id=value)
 
     @classmethod
     def get_param_names(cls) -> list[str]:
@@ -179,11 +169,14 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
 
     def _update_storage_profile_id(self, farm_id: str, queue_id: str) -> None:
         storage_profile_choices = self._get_storage_profile_choices_values_map(farm_id=farm_id, queue_id=queue_id)
+        storage_profile_id_default = self._get_default_choice(
+            storage_profile_choices, BaseDeadlineCloud._get_default_storage_profile_id()
+        )
         self._update_option_choices(
             param="storage_profile_id",
             choices=list(storage_profile_choices.keys()),
             choices_value_lookup=storage_profile_choices,
-            default=next(iter(storage_profile_choices.keys())),
+            default=storage_profile_id_default,
         )
 
     def _get_choices_values_map_fallback(self) -> dict:

@@ -97,6 +97,26 @@ class BaseDeadlineCloud:
     def _queue_to_name_and_id(cls, queue: Any) -> str:
         return f"{queue['displayName']} ({queue['queueId']})"
 
+    @classmethod
+    def _get_default_farm_id(cls) -> str:
+        return BaseDeadlineCloud._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "farm_id", default=get_setting_default("defaults.farm_id")
+        )
+
+    @classmethod
+    def _get_default_queue_id(cls) -> str:
+        return BaseDeadlineCloud._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "queue_id", default=get_setting_default("defaults.queue_id")
+        )
+
+    @classmethod
+    def _get_default_storage_profile_id(cls) -> str:
+        return BaseDeadlineCloud._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+            "storage_profile_id",
+            default=get_setting_default("settings.storage_profile_id"),
+        )
+
     def _safe_api_call(self, api_func: Callable, *args, **kwargs) -> Any | None:
         """Common error handling for API calls. Returns None on error."""
         try:
