@@ -5,7 +5,11 @@ from configparser import ConfigParser
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import boto3
-from deadline.client.api import get_boto3_session, get_storage_profile_for_queue
+from deadline.client.api import (
+    get_boto3_session,
+    get_storage_profile_for_queue,
+)
+from deadline.client.api._session import get_user_and_identity_store_id
 from deadline.client.config import get_setting_default
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
@@ -49,16 +53,20 @@ class BaseDeadlineCloud:
 
     @classmethod
     def _get_config_parser(cls) -> ConfigParser:
-        """Get a ConfigParser for the given file path."""
-        config = ConfigParser(
-            defaults={
-                "aws_profile_name": cls._get_config_value(
-                    DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
-                    "profile_name",
-                    default=get_setting_default("defaults.aws_profile_name"),
-                )
-            }
+        """Get a ConfigParser with application config values."""
+        config = ConfigParser()
+
+        # Get the profile name from application config
+        profile_name = cls._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+            "profile_name",
+            default=get_setting_default("defaults.aws_profile_name"),
         )
+
+        # Create the sections and settings that Deadline SDK expects
+        config.add_section("defaults")
+        config.set("defaults", "aws_profile_name", profile_name)
+
         return config
 
     @classmethod
@@ -98,14 +106,24 @@ class BaseDeadlineCloud:
             logger.exception(msg)
             return None
 
+    def _get_list_api_kwargs(self) -> dict:
+        kwargs = {}
+        user_id, _ = get_user_and_identity_store_id(config=self._get_config_parser())
+        if user_id:
+            kwargs["principalId"] = user_id
+
+        return kwargs
+
     def list_farms(self) -> Any:
         """List all farms in Deadline Cloud."""
-        result = self._safe_api_call(lambda: self._get_client().list_farms())
+        kwargs = self._get_list_api_kwargs()
+        result = self._safe_api_call(lambda: self._get_client().list_farms(**kwargs))
         return result["farms"] if result else []
 
     def list_queues(self, farm_id: str) -> Any:
         """List all queues in Deadline Cloud."""
-        result = self._safe_api_call(lambda: self._get_client().list_queues(farmId=farm_id))
+        kwargs = self._get_list_api_kwargs()
+        result = self._safe_api_call(lambda: self._get_client().list_queues(farmId=farm_id, **kwargs))
         return result["queues"] if result else []
 
     def list_storage_profiles(self, farm_id: str, queue_id: str) -> Any:
