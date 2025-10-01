@@ -24,4 +24,6 @@ class DeadlineCloudEndFlow(EndNode):
         params = ["was_successful", "result_details"]
         # Control parameters
         params.extend(["exec_in", "failed"])
+        # Default node parameters
+        params.extend(["execution_environment"])
         return params
