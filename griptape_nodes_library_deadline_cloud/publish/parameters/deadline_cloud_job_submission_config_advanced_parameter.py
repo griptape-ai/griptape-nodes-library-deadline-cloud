@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_resource_options import DeadlineCloudResourceOptions
@@ -31,6 +31,28 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
             "storage_profile_id",
             BaseDeadlineCloud._get_default_storage_profile_id(),
         )
+
+        try:
+            self.list_farms(raise_on_error=True)
+        except Exception:
+            msg = "Failed to validate Deadline Cloud credentials. Please ensure that your AWS credentials are configured correctly."
+            msg = (
+                "Failed to create the Deadline Cloud client.\n\n"
+                f"Error details: {msg}\n\n"
+                "Please:\n"
+                "   1. Ensure that your AWS profile name is configured correctly in the Library settings\n"
+                "   2. Ensure that your AWS credentials are valid, refreshed, and have the necessary permissions\n"
+                "   3. Refresh the libraries in the Griptape UI\n"
+            )
+            logger.exception(msg)
+            parameter_message = ParameterMessage(
+                name="deadline_cloud_credentials_parameter_message",
+                title="Deadline Cloud Credentials Configuration Warning",
+                variant="warning",
+                value=msg,
+            )
+            self.node.add_node_element(parameter_message)
+            self.node.move_element_to_position(element=parameter_message.name, position=0)
 
         # Add advanced job config group
         with ParameterGroup(name="Job Submission Config Advanced") as job_submission_config_group_advanced:
