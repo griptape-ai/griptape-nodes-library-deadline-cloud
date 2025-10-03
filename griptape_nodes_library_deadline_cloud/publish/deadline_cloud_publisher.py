@@ -81,7 +81,12 @@ logger = logging.getLogger("deadline_cloud_publisher")
 
 class DeadlineCloudPublisher(BaseDeadlineCloud):
     def __init__(
-        self, workflow_name: str, *, execute_on_publish: bool = False, published_workflow_file_name: str | None = None, pickle_control_flow_result:bool = False
+        self,
+        workflow_name: str,
+        *,
+        execute_on_publish: bool = False,
+        published_workflow_file_name: str | None = None,
+        pickle_control_flow_result: bool = False,
     ) -> None:
         super().__init__(session=BaseDeadlineCloud._get_session())
         self._workflow_name = workflow_name

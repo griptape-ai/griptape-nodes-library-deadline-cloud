@@ -17,7 +17,9 @@ class DeadlineCloudJobTemplateGenerator:
     """Handles generation of Open Job Description templates for Griptape workflows."""
 
     @staticmethod
-    def generate_job_template(job_bundle_dir: Path, workflow_name: str, library_paths: list[str], pickle_control_flow_result: bool = False) -> dict[str, Any]:
+    def generate_job_template(
+        job_bundle_dir: Path, workflow_name: str, library_paths: list[str], *, pickle_control_flow_result: bool = False
+    ) -> dict[str, Any]:
         """Generate Open Job Description template for the workflow."""
         parameter_definitions: list[dict[str, Any]] = []
 
@@ -76,7 +78,9 @@ class DeadlineCloudJobTemplateGenerator:
         )
 
         # Generate Python execution script
-        python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(library_paths, pickle_control_flow_result)
+        python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(
+            library_paths, pickle_control_flow_result
+        )
 
         venv_script = """#!/bin/env bash
 set -e
@@ -137,7 +141,7 @@ echo 'Virtual environment setup complete.'
         return job_template
 
     @staticmethod
-    def _generate_python_execution_script(library_paths: list[str], pickle_control_flow_result: bool = False) -> str:
+    def _generate_python_execution_script(library_paths: list[str], *, pickle_control_flow_result: bool = False) -> str:
         """Generate the Python script that will execute the Griptape workflow."""
         library_paths_str = ", ".join(repr(path) for path in library_paths)
 
