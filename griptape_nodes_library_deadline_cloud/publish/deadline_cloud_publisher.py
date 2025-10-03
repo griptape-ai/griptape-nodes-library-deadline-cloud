@@ -232,6 +232,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             result = GriptapeNodes.handle_request(
                 SaveWorkflowRequest(
                     file_name=workflow_name,
+                    pickle_control_flow_result=self.pickle_control_flow_result,
                 )
             )
             if not isinstance(result, SaveWorkflowResultSuccess):
@@ -275,6 +276,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             result = GriptapeNodes.handle_request(
                 SaveWorkflowRequest(
                     file_name=workflow_name,
+                    pickle_control_flow_result=self.pickle_control_flow_result,
                 )
             )
             if not isinstance(result, SaveWorkflowResultSuccess):
@@ -830,6 +832,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 deadline_cloud_start_flow_node_commands=self._deadline_cloud_start_flow_node_commands,
                 unique_parameter_uuid_to_values=self._unique_parameter_uuid_to_values,
                 libraries=library_paths,
+                pickle_control_flow_result=self.pickle_control_flow_result,
             )
         )
         return builder.generate_executor_workflow()
