@@ -39,6 +39,7 @@ class DeadlineCloudWorkflowBuilderInput:
     deadline_cloud_start_flow_node_commands: SerializeNodeToCommandsResultSuccess | None = None
     unique_parameter_uuid_to_values: dict = field(default_factory=dict)
     libraries: list[str] = field(default_factory=list)
+    pickle_control_flow_result: bool = False
 
 
 class DeadlineCloudWorkflowBuilder:
@@ -382,7 +383,8 @@ def main():
 
     # Save the workflow
     save_response = GriptapeNodes.handle_request(SaveWorkflowRequest(
-        file_name="{self.workflow_builder_input.executor_workflow_name}"))
+        file_name="{self.workflow_builder_input.executor_workflow_name}",
+        pickle_control_flow_result={self.workflow_builder_input.pickle_control_flow_result}))
 
     if save_response.succeeded():
         print(f"Successfully created executor workflow: {self.workflow_builder_input.executor_workflow_name}")

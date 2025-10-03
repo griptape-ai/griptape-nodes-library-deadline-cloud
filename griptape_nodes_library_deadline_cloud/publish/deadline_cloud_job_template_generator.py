@@ -206,9 +206,16 @@ if __name__ == "__main__":
         default=None,
         help="Path to JSON file containing input for the workflow",
     )
+    parser.add_argument(
+        "--pickle-control-flow-result",
+        action="store_true",
+        default={pickle_control_flow_result},
+        help="Whether to pickle the control flow result",
+    )
 
     args = parser.parse_args()
     input_file_path = args.input_file
+    pickle_result = args.pickle_control_flow_result
 
     try:
         if input_file_path:
@@ -229,6 +236,6 @@ if __name__ == "__main__":
         input=flow_input,
         storage_backend="local",
         workflow_executor=workflow_runner,
-        pickle_control_flow_result={pickle_control_flow_result},
+        pickle_control_flow_result=pickle_result,
     )
 """
