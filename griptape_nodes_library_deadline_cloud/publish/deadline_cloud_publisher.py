@@ -726,7 +726,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # 6. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
-                job_bundle_dir, workflow_name, library_paths, self.pickle_control_flow_result
+                job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
             )
 
             logger.info("Job bundle created at: %s", job_bundle_dir)

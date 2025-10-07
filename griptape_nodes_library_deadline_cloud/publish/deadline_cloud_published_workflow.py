@@ -160,6 +160,8 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
         params.extend(DeadlineCloudHostConfigParameter.get_param_names())
         # Execution Status Component parameters
         params.extend(["was_successful", "result_details"])
+        # Control parameters
+        params.extend(["exec_in", "exec_out", "failed"])
         return params
 
     def validate_before_workflow_run(self) -> list[Exception] | None:

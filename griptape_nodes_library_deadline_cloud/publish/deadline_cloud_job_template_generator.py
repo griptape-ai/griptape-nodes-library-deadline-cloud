@@ -79,7 +79,7 @@ class DeadlineCloudJobTemplateGenerator:
 
         # Generate Python execution script
         python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(
-            library_paths, pickle_control_flow_result
+            library_paths, pickle_control_flow_result=pickle_control_flow_result
         )
 
         venv_script = """#!/bin/env bash

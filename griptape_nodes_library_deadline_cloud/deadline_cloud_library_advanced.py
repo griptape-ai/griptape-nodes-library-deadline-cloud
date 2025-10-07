@@ -25,8 +25,6 @@ def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
         published_workflow_file_name=request.published_workflow_file_name,
         pickle_control_flow_result=request.pickle_control_flow_result,
     )
-    logger.error("REQUEST IS %s", request)
-    logger.error("THE PICKLE RESULT RIGHT NOW IS %s", request.pickle_control_flow_result)
     logger.info("Publisher: %s", publisher)
     return publisher.publish_workflow()
 
