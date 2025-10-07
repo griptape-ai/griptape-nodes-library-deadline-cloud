@@ -17,7 +17,9 @@ class DeadlineCloudJobTemplateGenerator:
     """Handles generation of Open Job Description templates for Griptape workflows."""
 
     @staticmethod
-    def generate_job_template(job_bundle_dir: Path, workflow_name: str, library_paths: list[str]) -> dict[str, Any]:
+    def generate_job_template(
+        job_bundle_dir: Path, workflow_name: str, library_paths: list[str], *, pickle_control_flow_result: bool = False
+    ) -> dict[str, Any]:
         """Generate Open Job Description template for the workflow."""
         parameter_definitions: list[dict[str, Any]] = []
 
@@ -76,7 +78,9 @@ class DeadlineCloudJobTemplateGenerator:
         )
 
         # Generate Python execution script
-        python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(library_paths)
+        python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(
+            library_paths, pickle_control_flow_result=pickle_control_flow_result
+        )
 
         venv_script = """#!/bin/env bash
 set -e
@@ -137,7 +141,7 @@ echo 'Virtual environment setup complete.'
         return job_template
 
     @staticmethod
-    def _generate_python_execution_script(library_paths: list[str]) -> str:
+    def _generate_python_execution_script(library_paths: list[str], *, pickle_control_flow_result: bool = False) -> str:
         """Generate the Python script that will execute the Griptape workflow."""
         library_paths_str = ", ".join(repr(path) for path in library_paths)
 
@@ -206,9 +210,16 @@ if __name__ == "__main__":
         default=None,
         help="Path to JSON file containing input for the workflow",
     )
+    parser.add_argument(
+        "--pickle-control-flow-result",
+        action="store_true",
+        default={pickle_control_flow_result},
+        help="Whether to pickle the control flow result",
+    )
 
     args = parser.parse_args()
     input_file_path = args.input_file
+    pickle_result = args.pickle_control_flow_result
 
     try:
         if input_file_path:
@@ -229,5 +240,6 @@ if __name__ == "__main__":
         input=flow_input,
         storage_backend="local",
         workflow_executor=workflow_runner,
+        pickle_control_flow_result=pickle_result,
     )
 """

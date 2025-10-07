@@ -81,7 +81,12 @@ logger = logging.getLogger("deadline_cloud_publisher")
 
 class DeadlineCloudPublisher(BaseDeadlineCloud):
     def __init__(
-        self, workflow_name: str, *, execute_on_publish: bool = False, published_workflow_file_name: str | None = None
+        self,
+        workflow_name: str,
+        *,
+        execute_on_publish: bool = False,
+        published_workflow_file_name: str | None = None,
+        pickle_control_flow_result: bool = False,
     ) -> None:
         super().__init__(session=BaseDeadlineCloud._get_session())
         self._workflow_name = workflow_name
@@ -92,6 +97,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self._unique_parameter_uuid_to_values: dict = {}
         self._set_parameter_value_commands_per_node: dict = {}
         self._node_name_to_uuid: dict = {}
+        self.pickle_control_flow_result = pickle_control_flow_result
 
     def publish_workflow(self) -> ResultPayload:
         try:
@@ -231,6 +237,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             result = GriptapeNodes.handle_request(
                 SaveWorkflowRequest(
                     file_name=workflow_name,
+                    pickle_control_flow_result=self.pickle_control_flow_result,
                 )
             )
             if not isinstance(result, SaveWorkflowResultSuccess):
@@ -274,6 +281,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             result = GriptapeNodes.handle_request(
                 SaveWorkflowRequest(
                     file_name=workflow_name,
+                    pickle_control_flow_result=self.pickle_control_flow_result,
                 )
             )
             if not isinstance(result, SaveWorkflowResultSuccess):
@@ -718,7 +726,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # 6. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
-                job_bundle_dir, workflow_name, library_paths
+                job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
             )
 
             logger.info("Job bundle created at: %s", job_bundle_dir)
@@ -829,6 +837,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 deadline_cloud_start_flow_node_commands=self._deadline_cloud_start_flow_node_commands,
                 unique_parameter_uuid_to_values=self._unique_parameter_uuid_to_values,
                 libraries=library_paths,
+                pickle_control_flow_result=self.pickle_control_flow_result,
             )
         )
         return builder.generate_executor_workflow()
