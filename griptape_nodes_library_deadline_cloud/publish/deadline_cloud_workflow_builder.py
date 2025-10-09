@@ -201,13 +201,19 @@ def main():
         # Configure StartNode parameters
         with GriptapeNodes.ContextManager().node(start_node_name):'''
 
-        non_deadline_params = [
+        non_default_input_params = [
             param
             for param in input_params
             if param["name"] not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names()
         ]
 
-        if len(non_deadline_params) == 0:
+        non_default_output_params = [
+            param
+            for param in output_params
+            if param["name"] not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names()
+        ]
+
+        if len(non_default_input_params) == 0:
             script += """
             pass
         """
@@ -235,7 +241,7 @@ def main():
         # Configure DeadlineCloudPublishedWorkflow parameters
         with GriptapeNodes.ContextManager().node(published_wf_name):"""
 
-        if len(input_params) == 0:
+        if len(non_default_input_params) == 0 and len(non_default_output_params) == 0:
             script += """
             pass
         """
@@ -279,7 +285,7 @@ def main():
         # Configure EndNode parameters
         with GriptapeNodes.ContextManager().node(end_node_name):"""
 
-        if len(non_deadline_params) == 0:
+        if len(non_default_output_params) == 0:
             script += """
             pass
         """
