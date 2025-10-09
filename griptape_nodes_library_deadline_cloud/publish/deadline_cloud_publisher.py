@@ -664,21 +664,28 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
                 # Discover dependencies for each node file
                 logger.info("Starting dependency discovery for %d node files", len(node_files))
+                logger.info("Library root: %s", library_root)
                 all_dependencies: set[Path] = set()
                 for node_file in node_files:
-                    if node_file.suffix == ".py":
+                    if node_file.suffix == ".py" and node_file.exists() and node_file.is_relative_to(library_root):
                         logger.debug("Discovering dependencies for: %s", node_file)
                         dependencies = self._discover_python_dependencies(node_file, library_root)
                         all_dependencies.update(dependencies)
                         logger.debug("Total dependencies found so far: %d", len(all_dependencies))
+                    else:
+                        logger.warning("Skipping node file (not .py, doesn't exist, or not in library root): %s", node_file)
 
                 # Add discovered dependencies to abs_paths
                 new_dependencies_count = 0
                 for dep in all_dependencies:
                     if dep not in abs_paths:
-                        abs_paths.append(dep)
-                        new_dependencies_count += 1
-                        logger.info("Adding discovered dependency to bundle: %s", dep)
+                        # Only add if it exists and is within library root
+                        if dep.exists() and dep.is_relative_to(library_root):
+                            abs_paths.append(dep)
+                            new_dependencies_count += 1
+                            logger.info("Adding discovered dependency to bundle: %s", dep)
+                        else:
+                            logger.warning("Skipping dependency (not in library root or doesn't exist): %s", dep)
 
                 logger.info(
                     "Dependency discovery complete. Added %d new files to bundle (total: %d files)",
@@ -688,9 +695,34 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
-                shutil.copytree(
-                    common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
-                )
+                logger.info("Copying library from common root: %s to destination: %s", common_root, dest)
+                logger.info("Common root exists: %s, is_dir: %s", common_root.exists(), common_root.is_dir())
+                logger.info("Sample files to be copied:")
+                for i, p in enumerate(abs_paths[:5]):
+                    logger.info("  [%d] %s (exists: %s, relative: %s)", i, p, p.exists(), p.relative_to(common_root))
+
+                try:
+                    shutil.copytree(
+                        common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
+                    )
+                    logger.info("Successfully copied %d files to bundle", len(abs_paths))
+                except (OSError, shutil.Error) as e:
+                    logger.error("Error during copytree: %s", e)
+                    logger.error("Attempting individual file copy instead...")
+                    # Fallback to individual file copy
+                    dest.mkdir(parents=True, exist_ok=True)
+                    copied_count = 0
+                    for file_path in abs_paths:
+                        if file_path.is_file() and file_path.exists():
+                            rel_path = file_path.relative_to(common_root)
+                            dest_file = dest / rel_path
+                            dest_file.parent.mkdir(parents=True, exist_ok=True)
+                            try:
+                                shutil.copy2(file_path, dest_file)
+                                copied_count += 1
+                            except (OSError, shutil.Error) as copy_error:
+                                logger.warning("Failed to copy file %s: %s", file_path, copy_error)
+                    logger.info("Fallback copy completed: %d files copied", copied_count)
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
                 library_paths.append(
                     (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
