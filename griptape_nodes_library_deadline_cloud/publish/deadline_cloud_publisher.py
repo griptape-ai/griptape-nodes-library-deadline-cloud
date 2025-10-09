@@ -549,16 +549,24 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         """
         if visited is None:
             visited = set()
+            logger.info("Starting dependency discovery for: %s", python_file)
 
-        if python_file in visited or not python_file.exists():
+        if python_file in visited:
+            logger.debug("Already visited: %s", python_file)
+            return visited
+
+        if not python_file.exists():
+            logger.debug("File does not exist: %s", python_file)
             return visited
 
         visited.add(python_file)
+        logger.debug("Analyzing file: %s", python_file)
 
         try:
             with python_file.open("r", encoding="utf-8") as f:
                 tree = ast.parse(f.read(), filename=str(python_file))
 
+            imports_found = []
             for node in ast.walk(tree):
                 # Handle 'from X import Y' and 'import X'
                 if isinstance(node, ast.ImportFrom):
@@ -571,8 +579,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                         if node.module:
                             module_parts = node.module.split(".")
                             import_path = base_path / Path(*module_parts)
+                            import_statement = f"from {'.' * node.level}{node.module} import ..."
                         else:
                             import_path = base_path
+                            import_statement = f"from {'.' * node.level} import ..."
+
+                        imports_found.append(import_statement)
 
                         # Try both .py file and package directory
                         possible_paths = [
@@ -584,17 +596,28 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                             resolved_path = possible_path.resolve()
                             # Only include files within the library root
                             if resolved_path.exists() and resolved_path.is_relative_to(library_root):
+                                logger.info("Found dependency: %s -> %s", import_statement, resolved_path)
                                 self._discover_python_dependencies(resolved_path, library_root, visited)
+                            else:
+                                logger.debug("Skipping external or non-existent import: %s", possible_path)
 
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
+                        import_statement = f"import {alias.name}"
+                        imports_found.append(import_statement)
                         # Try to resolve as a relative module within the library
                         module_parts = alias.name.split(".")
                         possible_path = library_root / Path(*module_parts).with_suffix(".py")
                         resolved_path = possible_path.resolve()
 
                         if resolved_path.exists() and resolved_path.is_relative_to(library_root):
+                            logger.info("Found dependency: %s -> %s", import_statement, resolved_path)
                             self._discover_python_dependencies(resolved_path, library_root, visited)
+                        else:
+                            logger.debug("Skipping external or non-existent import: %s", alias.name)
+
+            if imports_found:
+                logger.debug("Imports found in %s: %s", python_file.name, ", ".join(imports_found))
 
         except (SyntaxError, OSError) as e:
             logger.warning("Failed to parse Python file %s for dependencies: %s", python_file, e)
@@ -632,23 +655,36 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
                 # Collect all node files
                 node_files = []
+                logger.info("Processing library: %s", library_ref.library_name)
                 for node in library_data.nodes:
                     p = (library_root / Path(node.file_path)).resolve()
                     abs_paths.append(p)
                     node_files.append(p)
+                    logger.info("Node file from library JSON: %s", p)
 
                 # Discover dependencies for each node file
+                logger.info("Starting dependency discovery for %d node files", len(node_files))
                 all_dependencies: set[Path] = set()
                 for node_file in node_files:
                     if node_file.suffix == ".py":
+                        logger.debug("Discovering dependencies for: %s", node_file)
                         dependencies = self._discover_python_dependencies(node_file, library_root)
                         all_dependencies.update(dependencies)
+                        logger.debug("Total dependencies found so far: %d", len(all_dependencies))
 
                 # Add discovered dependencies to abs_paths
+                new_dependencies_count = 0
                 for dep in all_dependencies:
                     if dep not in abs_paths:
                         abs_paths.append(dep)
-                        logger.info("Discovered dependency: %s", dep)
+                        new_dependencies_count += 1
+                        logger.info("Adding discovered dependency to bundle: %s", dep)
+
+                logger.info(
+                    "Dependency discovery complete. Added %d new files to bundle (total: %d files)",
+                    new_dependencies_count,
+                    len(abs_paths),
+                )
 
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
