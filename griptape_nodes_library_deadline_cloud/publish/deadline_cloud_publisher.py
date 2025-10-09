@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.metadata
 import json
 import logging
@@ -533,6 +534,73 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         # Return job attachment settings and manifests for job submission
         return job_attachment_settings, attachments
 
+    def _discover_python_dependencies(
+        self, python_file: Path, library_root: Path, visited: set[Path] | None = None
+    ) -> set[Path]:
+        """Recursively discover Python file dependencies using AST parsing.
+
+        Args:
+            python_file: The Python file to analyze for imports
+            library_root: The root directory of the library (for resolving relative imports)
+            visited: Set of already visited files to avoid circular dependencies
+
+        Returns:
+            Set of Path objects for all discovered dependency files
+        """
+        if visited is None:
+            visited = set()
+
+        if python_file in visited or not python_file.exists():
+            return visited
+
+        visited.add(python_file)
+
+        try:
+            with python_file.open("r", encoding="utf-8") as f:
+                tree = ast.parse(f.read(), filename=str(python_file))
+
+            for node in ast.walk(tree):
+                # Handle 'from X import Y' and 'import X'
+                if isinstance(node, ast.ImportFrom):
+                    if node.level > 0:  # Relative import
+                        # Calculate the base path for relative imports
+                        base_path = python_file.parent
+                        for _ in range(node.level - 1):
+                            base_path = base_path.parent
+
+                        if node.module:
+                            module_parts = node.module.split(".")
+                            import_path = base_path / Path(*module_parts)
+                        else:
+                            import_path = base_path
+
+                        # Try both .py file and package directory
+                        possible_paths = [
+                            import_path.with_suffix(".py"),
+                            import_path / "__init__.py",
+                        ]
+
+                        for possible_path in possible_paths:
+                            resolved_path = possible_path.resolve()
+                            # Only include files within the library root
+                            if resolved_path.exists() and resolved_path.is_relative_to(library_root):
+                                self._discover_python_dependencies(resolved_path, library_root, visited)
+
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        # Try to resolve as a relative module within the library
+                        module_parts = alias.name.split(".")
+                        possible_path = library_root / Path(*module_parts).with_suffix(".py")
+                        resolved_path = possible_path.resolve()
+
+                        if resolved_path.exists() and resolved_path.is_relative_to(library_root):
+                            self._discover_python_dependencies(resolved_path, library_root, visited)
+
+        except (SyntaxError, OSError) as e:
+            logger.warning("Failed to parse Python file %s for dependencies: %s", python_file, e)
+
+        return visited
+
     def _copy_libraries_to_path_for_workflow(
         self,
         node_libraries: list[LibraryNameAndVersion],
@@ -559,10 +627,29 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             if library.library_path.endswith(".json"):
                 library_path = Path(library.library_path)
                 absolute_library_path = library_path.resolve()
+                library_root = library_path.parent
                 abs_paths = [absolute_library_path]
+
+                # Collect all node files
+                node_files = []
                 for node in library_data.nodes:
-                    p = (library_path.parent / Path(node.file_path)).resolve()
+                    p = (library_root / Path(node.file_path)).resolve()
                     abs_paths.append(p)
+                    node_files.append(p)
+
+                # Discover dependencies for each node file
+                all_dependencies: set[Path] = set()
+                for node_file in node_files:
+                    if node_file.suffix == ".py":
+                        dependencies = self._discover_python_dependencies(node_file, library_root)
+                        all_dependencies.update(dependencies)
+
+                # Add discovered dependencies to abs_paths
+                for dep in all_dependencies:
+                    if dep not in abs_paths:
+                        abs_paths.append(dep)
+                        logger.info("Discovered dependency: %s", dep)
+
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
                 shutil.copytree(
