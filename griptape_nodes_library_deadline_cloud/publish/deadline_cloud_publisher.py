@@ -679,13 +679,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 new_dependencies_count = 0
                 for dep in all_dependencies:
                     if dep not in abs_paths:
-                        # Only add if it exists and is within library root
-                        if dep.exists() and dep.is_relative_to(library_root):
-                            abs_paths.append(dep)
-                            new_dependencies_count += 1
-                            logger.info("Adding discovered dependency to bundle: %s", dep)
-                        else:
-                            logger.warning("Skipping dependency (not in library root or doesn't exist): %s", dep)
+                        abs_paths.append(dep)
+                        new_dependencies_count += 1
+                        logger.info("Adding discovered dependency to bundle: %s", dep)
 
                 logger.info(
                     "Dependency discovery complete. Added %d new files to bundle (total: %d files)",
