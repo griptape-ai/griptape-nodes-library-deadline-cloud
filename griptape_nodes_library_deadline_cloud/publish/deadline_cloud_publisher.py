@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
+import semver
 from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.api import get_queue_user_boto3_session
 from deadline.client.config import get_setting_default
@@ -49,10 +50,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowRequest,
     SaveWorkflowResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import (
-    GriptapeNodes,
-    Version,
-)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from huggingface_hub.constants import HF_HUB_CACHE
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, LIBRARY_NAME
 from publish.base_deadline_cloud import BaseDeadlineCloud
@@ -207,9 +205,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         """Validate the workflow before publishing."""
         workflow = self._ensure_workflow_exists(workflow_name)
 
-        min_supported_version = Version.from_string("0.7.0")
+        min_supported_version = semver.VersionInfo.parse("0.7.0")
         if workflow.metadata.schema_version is not None:
-            workflow_version = Version.from_string(workflow.metadata.schema_version)
+            workflow_version = semver.VersionInfo.parse(workflow.metadata.schema_version)
             if (
                 workflow_version is not None
                 and min_supported_version is not None
