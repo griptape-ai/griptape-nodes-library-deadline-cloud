@@ -570,6 +570,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             for node in ast.walk(tree):
                 # Handle 'from X import Y' and 'import X'
                 if isinstance(node, ast.ImportFrom):
+                    # Handle both relative imports (from .module) and absolute imports (from module)
                     if node.level > 0:  # Relative import
                         # Calculate the base path for relative imports
                         base_path = python_file.parent
@@ -600,6 +601,27 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                                 self._discover_python_dependencies(resolved_path, library_root, visited)
                             else:
                                 logger.debug("Skipping external or non-existent import: %s", possible_path)
+                    elif node.module:  # Absolute import (node.level == 0)
+                        import_statement = f"from {node.module} import ..."
+                        imports_found.append(import_statement)
+
+                        # Check if this absolute import is actually within our library
+                        module_parts = node.module.split(".")
+
+                        # Try both .py file and package directory
+                        possible_paths = [
+                            library_root / Path(*module_parts).with_suffix(".py"),
+                            library_root / Path(*module_parts) / "__init__.py",
+                        ]
+
+                        for possible_path in possible_paths:
+                            resolved_path = possible_path.resolve()
+                            # Only include files within the library root
+                            if resolved_path.exists() and resolved_path.is_relative_to(library_root):
+                                logger.info("Found dependency: %s -> %s", import_statement, resolved_path)
+                                self._discover_python_dependencies(resolved_path, library_root, visited)
+                                break
+                            logger.debug("Skipping external or non-existent import: %s", possible_path)
 
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
