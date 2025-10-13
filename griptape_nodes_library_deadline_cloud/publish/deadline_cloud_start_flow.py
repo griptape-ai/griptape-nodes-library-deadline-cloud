@@ -1,12 +1,18 @@
+import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import StartNode
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
+from publish.parameters.deadline_cloud_job_attachments_config_parameter import (
+    DeadlineCloudJobAttachmentsConfigParameter,
+)
 from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter import (
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
 )
 from publish.parameters.deadline_cloud_job_submission_config_parameter import DeadlineCloudJobSubmissionConfigParameter
+
+logger = logging.getLogger(__name__)
 
 
 class DeadlineCloudStartFlow(StartNode):
@@ -21,7 +27,12 @@ class DeadlineCloudStartFlow(StartNode):
         super().__init__(name, metadata)
 
         # Add job config group
-        self.job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(
+        self._job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(
+            self, metadata, allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY}
+        )
+
+        # Add job attachments config group
+        self._job_attachments_config_params = DeadlineCloudJobAttachmentsConfigParameter(
             self, metadata, allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY}
         )
 
