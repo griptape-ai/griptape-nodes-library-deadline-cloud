@@ -123,9 +123,10 @@ class BaseDeadlineCloud:
             return api_func(*args, **kwargs)
         except Exception as e:
             msg = f"API call failed: {e}"
-            logger.exception(msg)
             if raise_on_error:
+                logger.exception(msg)
                 raise
+            logger.debug(msg)
             return None
 
     def _get_list_api_kwargs(self) -> dict:
