@@ -117,13 +117,15 @@ class BaseDeadlineCloud:
             default=get_setting_default("settings.storage_profile_id"),
         )
 
-    def _safe_api_call(self, api_func: Callable, *args, **kwargs) -> Any | None:
-        """Common error handling for API calls. Returns None on error."""
+    def _safe_api_call(self, api_func: Callable, *args, raise_on_error: bool = False, **kwargs) -> Any | None:
+        """Common error handling for API calls. Returns None on error unless raise_on_error is True."""
         try:
             return api_func(*args, **kwargs)
         except Exception as e:
             msg = f"API call failed: {e}"
             logger.exception(msg)
+            if raise_on_error:
+                raise
             return None
 
     def _get_list_api_kwargs(self) -> dict:
@@ -134,22 +136,25 @@ class BaseDeadlineCloud:
 
         return kwargs
 
-    def list_farms(self) -> Any:
+    def list_farms(self, *_args, raise_on_error: bool = False) -> Any:
         """List all farms in Deadline Cloud."""
         kwargs = self._get_list_api_kwargs()
-        result = self._safe_api_call(lambda: self._get_client().list_farms(**kwargs))
+        result = self._safe_api_call(lambda: self._get_client().list_farms(**kwargs), raise_on_error=raise_on_error)
         return result["farms"] if result else []
 
-    def list_queues(self, farm_id: str) -> Any:
+    def list_queues(self, farm_id: str, *_args, raise_on_error: bool = False) -> Any:
         """List all queues in Deadline Cloud."""
         kwargs = self._get_list_api_kwargs()
-        result = self._safe_api_call(lambda: self._get_client().list_queues(farmId=farm_id, **kwargs))
+        result = self._safe_api_call(
+            lambda: self._get_client().list_queues(farmId=farm_id, **kwargs), raise_on_error=raise_on_error
+        )
         return result["queues"] if result else []
 
-    def list_storage_profiles(self, farm_id: str, queue_id: str) -> Any:
+    def list_storage_profiles(self, farm_id: str, queue_id: str, *_args, raise_on_error: bool = False) -> Any:
         """List all storage profiles for the queue in Deadline Cloud."""
         result = self._safe_api_call(
-            lambda: self._get_client().list_storage_profiles_for_queue(farmId=farm_id, queueId=queue_id)
+            lambda: self._get_client().list_storage_profiles_for_queue(farmId=farm_id, queueId=queue_id),
+            raise_on_error=raise_on_error,
         )
         return result["storageProfiles"] if result else []
 

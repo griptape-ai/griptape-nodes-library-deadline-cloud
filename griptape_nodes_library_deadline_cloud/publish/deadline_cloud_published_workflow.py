@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import shutil
 import tempfile
 from enum import StrEnum
@@ -19,6 +20,9 @@ from griptape_nodes.exe_types.param_components.execution_status_component import
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_poller import DeadlineCloudJobDetails, DeadlineCloudJobPoller
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
+from publish.parameters.deadline_cloud_job_attachments_config_parameter import (
+    DeadlineCloudJobAttachmentsConfigParameter,
+)
 from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter import (
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
 )
@@ -69,7 +73,12 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
             )
 
         # Add job config group
-        self.job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(self, metadata)
+        self._job_submission_config_params = DeadlineCloudJobSubmissionConfigParameter(self, metadata)
+
+        # Add job attachments config group
+        self._job_attachments_config_params = DeadlineCloudJobAttachmentsConfigParameter(
+            self, metadata, allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT}
+        )
 
         # Add advanced job config group
         self._job_submission_config_advanced_params = DeadlineCloudJobSubmissionConfigAdvancedParameter(self, metadata)
@@ -156,6 +165,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
     def get_default_node_parameter_names(cls) -> list[str]:
         """Get the names of the parameters configured on the node by default."""
         params = DeadlineCloudJobSubmissionConfigParameter.get_param_names()
+        params.extend(DeadlineCloudJobAttachmentsConfigParameter.get_param_names())
         params.extend(DeadlineCloudJobSubmissionConfigAdvancedParameter.get_param_names())
         params.extend(DeadlineCloudHostConfigParameter.get_param_names())
         # Execution Status Component parameters
@@ -403,16 +413,20 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                         logger.info("Checking parameter '%s' in node '%s'", param_name, node_name)
                         # Check if this parameter exists in the output
                         if param_name in node_outputs:
+                            map_param_name = param_name
+                            # Handle remapping of 'failed' to 'failure'
+                            if param_name == "failed":
+                                map_param_name = "failure"
                             param_value = node_outputs[param_name]
                             logger.info("Found output parameter '%s' with value: %s", param_name, param_value)
 
                             # Set the output parameter value
                             self.set_parameter_value(
-                                param_name=param_name,
+                                param_name=map_param_name,
                                 value=param_value,
                             )
-                            self.parameter_output_values[param_name] = param_value
-                            logger.info("Set output parameter %s = %s", param_name, param_value)
+                            self.parameter_output_values[map_param_name] = param_value
+                            logger.info("Set output parameter %s = %s", map_param_name, param_value)
 
     def _reconcile_job_template(self, job_template: dict[str, Any]) -> dict[str, Any]:
         """Reconcile the job template with the parameters."""
@@ -439,8 +453,14 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         return job_template
 
-    def _upload_input_json_to_s3(
-        self, input_json: dict[str, Any], farm_id: str, queue_id: str, storage_profile: StorageProfile | None = None
+    def _upload_attachments_to_s3(  # noqa: PLR0913
+        self,
+        input_json: dict[str, Any],
+        input_paths: list[str],
+        output_paths: list[str],
+        farm_id: str,
+        queue_id: str,
+        storage_profile: StorageProfile | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Upload input JSON to S3 as a job attachment and return the relative path."""
         try:
@@ -453,6 +473,8 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                 json.dump(input_json, f, indent=2)
 
             logger.info("Created input JSON file at: %s", input_json_path)
+            input_paths.append(str(input_json_path))
+
             deadline_client = self._get_client()
 
             queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
@@ -466,6 +488,8 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
             )
             queue_session._session.set_config_variable("region", self._session.region_name)
 
+            # 1. Upload job input JSON as job attachment
+            logger.info("Uploading input JSON to S3 as job attachment")
             input_attachments = DeadlineCloudPublisher.upload_paths_as_job_attachments(
                 input_paths=[str(input_json_path)],
                 output_paths=[],
@@ -476,7 +500,21 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                 queue_session=queue_session,
             )
 
-            logger.info("Input JSON uploaded successfully to S3")
+            # 2. Upload any additional input paths as job attachments
+            if input_paths or output_paths:
+                logger.info("Uploading additional input/output paths to S3 as job attachments")
+                additional_attachments = DeadlineCloudPublisher.upload_paths_as_job_attachments(
+                    input_paths=input_paths,
+                    output_paths=output_paths,
+                    farm_id=farm_id,
+                    queue_id=queue_id,
+                    storage_profile=storage_profile,
+                    job_attachment_settings=job_attachment_settings,
+                    queue_session=queue_session,
+                )
+                input_attachments.manifests.extend(additional_attachments.manifests)
+
+            logger.info("Job attachments uploaded successfully to S3")
 
             # Return the relative path and the attachments
             return str(input_json_path), input_attachments.to_dict()
@@ -564,21 +602,29 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
             farm_id = self.get_parameter_value("farm_id")
             queue_id = self.get_parameter_value("queue_id")
             storage_profile_id = self.get_parameter_value("storage_profile_id")
+            attachment_input_paths = self.get_parameter_value("attachment_input_paths") or []
+            attachment_output_paths = self.get_parameter_value("attachment_output_paths") or []
 
             root_dir = str(attachments["manifests"][0]["rootPath"])
             input_json = self._collect_input_parameters()
+            output_path = Path(relative_dir_path) / "output"
 
             storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
                 farm_id, queue_id, storage_profile_id
             )
 
-            # Upload input JSON to S3 to avoid parameter size limits
-            logger.info("Uploading input JSON to S3 to avoid parameter size limits")
-            input_json_path, input_attachments = self._upload_input_json_to_s3(
-                input_json, farm_id, queue_id, storage_profile
+            from publish.deadline_cloud_publisher import DeadlineCloudPublisher
+
+            attachment_input_paths = DeadlineCloudPublisher.expand_directories_to_files(attachment_input_paths)
+            attachment_output_paths = [
+                str(Path(os.path.normpath(Path(path_str).absolute()))) for path_str in attachment_output_paths
+            ]
+
+            logger.info("Uploading attachments")
+            input_json_path, input_attachments = self._upload_attachments_to_s3(
+                input_json, attachment_input_paths, attachment_output_paths, farm_id, queue_id, storage_profile
             )
             input_path = Path(input_json_path).parent
-            output_path = input_path / "output"
 
             # Combine the original attachments with the input JSON attachments
             combined_attachments = self._combine_attachments(attachments, input_attachments)

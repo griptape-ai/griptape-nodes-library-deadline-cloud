@@ -108,10 +108,10 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
-            self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
             self._deadline_cloud_start_flow_node_commands = self._get_deadline_cloud_start_flow_node_commands(
                 self._unique_parameter_uuid_to_values
             )
+            self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
             package_path = self._package_workflow(self._workflow_name)
@@ -427,7 +427,40 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         else:
             return model_paths
 
-    def _process_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:
+    @classmethod
+    def expand_directories_to_files(cls, paths: list[str]) -> list[str]:
+        """Expand directories in the list of paths to individual file paths.
+
+        Uses absolute() instead of resolve() to avoid symlink resolution issues,
+        matching the behavior of Deadline Cloud's job attachments system.
+        """
+        expanded_paths: list[str] = []
+
+        for path_str in paths:
+            # Use absolute() instead of resolve() to avoid symlink issues (e.g., /var vs /private/var on macOS)
+            # Then normalize to clean up relative paths like '..'
+            path = Path(os.path.normpath(Path(path_str).absolute()))
+            if path.exists():
+                if path.is_dir():
+                    expanded_paths.extend(
+                        [
+                            str(os.path.normpath(file_path.absolute()))
+                            for file_path in path.glob("**/*")
+                            if not file_path.is_dir()
+                            and file_path.exists()
+                            and "__pycache__" not in str(file_path)
+                            and ".venv" not in str(file_path)
+                        ]
+                    )
+                else:
+                    expanded_paths.append(str(path))
+            else:
+                logger.warning("Path does not exist and will be skipped: %s", path)
+
+        logger.info("Expanded %d file paths", len(expanded_paths))
+        return expanded_paths
+
+    def _process_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:  # noqa: C901, PLR0915
         """Process job attachments following the official Deadline Cloud pattern."""
         try:
             logger.info("Processing job attachments for: %s", package_path)
@@ -482,33 +515,18 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             job_bundle_path = Path(package_path)
             assets_dir = job_bundle_path / "assets"
 
-            # Prepare paths for upload - expand directory to individual files
-            input_paths = []
-            if assets_dir.is_dir():
-                input_paths.extend(
-                    [
-                        str(file_path)
-                        for file_path in assets_dir.glob("**/*")
-                        if not file_path.is_dir()
-                        and file_path.exists()
-                        and "__pycache__" not in str(file_path)
-                        and ".venv" not in str(file_path)
-                    ]
-                )
-
-            # Gather model files for use as input paths
-            if enable_models_as_attachments:
-                model_names = self._gather_models_for_workflow()
-                model_paths = self._get_model_paths(model_names)
-                input_paths.extend(model_paths)
-
             storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
                 farm_id, queue_id, storage_profile_id
             )
 
-            # Use the classmethod to handle the actual upload
+            # 1. Upload job bundle assets (clean root path = temp bundle directory)
+            bundle_input_paths = []
+            if assets_dir.is_dir():
+                bundle_input_paths.extend(self.expand_directories_to_files([str(assets_dir)]))
+
+            logger.info("Uploading %d job bundle files", len(bundle_input_paths))
             attachments = self.upload_paths_as_job_attachments(
-                input_paths=input_paths,
+                input_paths=bundle_input_paths,
                 output_paths=[str(job_bundle_path / "output")],
                 farm_id=farm_id,
                 queue_id=queue_id,
@@ -516,6 +534,24 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 job_attachment_settings=job_attachment_settings,
                 queue_session=queue_session,
             )
+
+            # 2. Upload model files separately (if enabled)
+            if enable_models_as_attachments:
+                model_names = self._gather_models_for_workflow()
+                model_paths = self._get_model_paths(model_names)
+                if model_paths:
+                    logger.info("Uploading %d model files", len(model_paths))
+                    model_attachments = self.upload_paths_as_job_attachments(
+                        input_paths=model_paths,
+                        output_paths=[],
+                        farm_id=farm_id,
+                        queue_id=queue_id,
+                        storage_profile=storage_profile,
+                        job_attachment_settings=job_attachment_settings,
+                        queue_session=queue_session,
+                    )
+                    attachments.manifests.extend(model_attachments.manifests)
+                    logger.info("Added %d model manifest(s)", len(model_attachments.manifests))
 
         except (ClientError, BotoCoreError) as e:
             details = f"AWS API error processing job attachments: {e}"
