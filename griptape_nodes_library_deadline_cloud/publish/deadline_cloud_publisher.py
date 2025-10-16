@@ -442,16 +442,14 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             path = Path(os.path.normpath(Path(path_str).absolute()))
             if path.exists():
                 if path.is_dir():
-                    expanded_paths.extend(
-                        [
-                            str(os.path.normpath(file_path.absolute()))
-                            for file_path in path.glob("**/*")
-                            if not file_path.is_dir()
-                            and file_path.exists()
-                            and "__pycache__" not in str(file_path)
-                            and ".venv" not in str(file_path)
-                        ]
-                    )
+                    # Use os.walk() for more reliable directory traversal, especially on Windows
+                    for root, dirs, files in os.walk(path):
+                        # Filter out unwanted directories in-place to prevent traversal
+                        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".venv")]
+                        for file in files:
+                            file_path = Path(root) / file
+                            if file_path.exists():
+                                expanded_paths.append(str(os.path.normpath(file_path.absolute())))
                 else:
                     expanded_paths.append(str(path))
             else:
@@ -601,9 +599,41 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     abs_paths.append(p)
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
-                shutil.copytree(
-                    common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
-                )
+
+                logger.info("Copying library from %s to %s", common_root, dest)
+
+                # Verify source exists
+                if not common_root.exists():
+                    details = f"Source library path does not exist: {common_root}"
+                    logger.error(details)
+                    raise ValueError(details)
+
+                # Use manual copy instead of copytree for better Windows compatibility
+                # This ensures all intermediate directories are created properly
+                try:
+                    for root, dirs, files in os.walk(str(common_root)):
+                        # Filter out unwanted directories
+                        dirs[:] = [d for d in dirs if d not in (".venv", "__pycache__")]
+
+                        # Calculate relative path and create destination directory
+                        rel_path = Path(root).relative_to(common_root)
+                        dest_dir = dest / rel_path
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+
+                        # Copy files
+                        for file in files:
+                            src_file = Path(root) / file
+                            dst_file = dest_dir / file
+                            try:
+                                shutil.copy2(src_file, dst_file)
+                            except (OSError, PermissionError) as e:
+                                logger.warning("Failed to copy %s to %s: %s", src_file, dst_file, e)
+                except (OSError, PermissionError) as e:
+                    details = f"Error walking directory {common_root}: {e}"
+                    logger.error(details)
+                    raise RuntimeError(details) from e
+
+                logger.info("Successfully copied library to %s", dest)
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
                 library_paths.append(
                     (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
