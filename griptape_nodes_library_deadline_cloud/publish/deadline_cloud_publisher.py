@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.metadata
 import json
 import logging
@@ -569,6 +570,79 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         # Return job attachment settings and manifests for job submission
         return job_attachment_settings, attachments
 
+    def _copy_imported_files_to_destination(self, imported_files: set[Path], common_root: Path, dest: Path) -> None:
+        """Copy imported files to the destination directory.
+
+        Args:
+            imported_files: Set of imported file paths to copy
+            common_root: The common root directory
+            dest: The destination directory
+        """
+        for imported_file in imported_files:
+            try:
+                relative_path = imported_file.relative_to(common_root)
+                dest_file = dest / relative_path
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                if not dest_file.exists():
+                    shutil.copy2(imported_file, dest_file)
+                    logger.info("Copied imported file: %s -> %s", imported_file, dest_file)
+            except ValueError:
+                # File is outside common_root, skip it
+                logger.warning("Skipping import outside root: %s", imported_file)
+
+    def _collect_imported_files(self, node_file_paths: list[Path], common_root: Path) -> set[Path]:
+        """Collect all imported files from node files.
+
+        Args:
+            node_file_paths: List of node file paths to analyze
+            common_root: The common root directory to check for imports
+
+        Returns:
+            Set of imported file paths
+        """
+        imported_files = set()
+        for node_file in node_file_paths:
+            if node_file.exists() and node_file.suffix == ".py":
+                local_imports = self._extract_local_imports(node_file, common_root)
+                for imported_file in local_imports:
+                    if imported_file not in imported_files:
+                        imported_files.add(imported_file)
+                        logger.info("Including imported module: %s", imported_file)
+        return imported_files
+
+    def _extract_local_imports(self, file_path: Path, root_directory: Path) -> list[Path]:
+        """Extract local module imports from a Python file that are in the root directory.
+
+        Args:
+            file_path: The Python file to analyze
+            root_directory: The root directory to check for local imports
+
+        Returns:
+            List of absolute paths to local module files that are imported
+        """
+        local_imports: list[Path] = []
+
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                tree = ast.parse(f.read(), filename=str(file_path))
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                    # Handle "from module_name import something" (level=0 means absolute import)
+                    # Check if this module exists in the root directory
+                    module_path = root_directory / f"{node.module.replace('.', '/')}.py"
+                    module_init_path = root_directory / node.module.replace(".", "/") / "__init__.py"
+
+                    if module_path.exists() and module_path.is_file():
+                        local_imports.append(module_path.resolve())
+                    elif module_init_path.exists() and module_init_path.is_file():
+                        local_imports.append(module_init_path.resolve())
+
+        except (SyntaxError, OSError) as e:
+            logger.warning("Failed to parse %s for imports: %s", file_path, e)
+
+        return local_imports
+
     def _copy_libraries_to_path_for_workflow(
         self,
         node_libraries: list[LibraryNameAndVersion],
@@ -596,14 +670,27 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 library_path = Path(library.library_path)
                 absolute_library_path = library_path.resolve()
                 abs_paths = [absolute_library_path]
+
+                # Collect all node file paths
+                node_file_paths = []
                 for node in library_data.nodes:
                     p = (library_path.parent / Path(node.file_path)).resolve()
                     abs_paths.append(p)
+                    node_file_paths.append(p)
+
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
+
+                # Collect imported files from node files
+                imported_files = self._collect_imported_files(node_file_paths, common_root)
+
                 dest = destination_path / common_root.name
                 shutil.copytree(
                     common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
                 )
+
+                # Copy any additional imported files that aren't already in the common_root tree
+                self._copy_imported_files_to_destination(imported_files, common_root, dest)
+
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
                 library_paths.append(
                     (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
