@@ -52,5 +52,9 @@ class DeadlineCloudStartFlow(StartNode):
             self._host_config_params.set_host_config_param_visibility(visible=not value)
         self._job_submission_config_advanced_params.after_value_set(parameter, value)
 
+    def validate_before_workflow_run(self) -> list[Exception] | None:
+        exceptions = super().validate_before_workflow_run() or []
+        return exceptions if exceptions else None
+
     def process(self) -> None:
         pass

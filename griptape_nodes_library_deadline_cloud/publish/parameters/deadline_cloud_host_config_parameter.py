@@ -1,8 +1,9 @@
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.multi_options import MultiOptions
 from griptape_nodes.traits.numbers_selector import NumbersSelector
 
@@ -25,6 +26,7 @@ class WorkerCPUArchitecture(StrEnum):
 class DeadlineCloudHostConfigParameter:
     def __init__(self, node: BaseNode, allowed_modes: set[ParameterMode] | None = None) -> None:
         self.node = node
+        self.allowed_modes = allowed_modes
         # Add host config group
         with ParameterGroup(name="Host Config") as host_config_group:
             Parameter(
@@ -134,30 +136,122 @@ class DeadlineCloudHostConfigParameter:
                 allowed_modes=allowed_modes,
             )
             Parameter(
-                name="custom_amount_requirements",
-                input_types=["list"],
-                type="list",
-                output_type="list",
-                tooltip="The custom amount requirements for the job.",
+                name="add_custom_amount_requirement",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                tooltip="Add a custom amount requirement for the job with a provided capability name.",
                 ui_options={
-                    "display_name": "Custom amount requirements",
+                    "display_name": "Add custom amount capability",
+                    "placeholder_text": "amount.custom_capability_name",
+                },
+                traits={
+                    Button(
+                        full_width=False,
+                        icon="plus",
+                        size="icon",
+                        variant="secondary",
+                        on_click=self._add_custom_amount_parameter,
+                    ),
                 },
                 allowed_modes=allowed_modes,
             )
             Parameter(
-                name="custom_attribute_requirements",
-                input_types=["list"],
-                type="list",
-                output_type="list",
-                tooltip="The custom attribute requirements for the job.",
+                name="add_custom_attribute_requirement",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                tooltip="Add a custom attribute requirement for the job with a provided capability name.",
                 ui_options={
-                    "display_name": "Custom attribute requirements",
+                    "display_name": "Add custom attribute capability",
+                    "placeholder_text": "attr.custom_capability_name",
+                },
+                traits={
+                    Button(
+                        full_width=False,
+                        icon="plus",
+                        size="icon",
+                        variant="secondary",
+                        on_click=self._add_custom_attribute_parameter,
+                    ),
                 },
                 allowed_modes=allowed_modes,
             )
 
         host_config_group.ui_options = {"collapsed": True}
         node.add_node_element(host_config_group)
+
+    def _is_valid_capability_name(self, name: str, capability_type: str) -> None:
+        # Format must match: [<Identifier>:]capability_type.<Identifier>[.<Identifier>]*, where the [] is optional
+        min_parts = 2
+        msg = f"Invalid {capability_type} capability name: '{name}'. Must follow format [<Identifier>:]{capability_type}.<Identifier>[.<Identifier>]*"
+        parts = name.split(".")
+        if len(parts) < min_parts or not parts[0].endswith(capability_type):
+            raise ValueError(msg)
+
+    def _add_custom_amount_parameter(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002
+        name = self.node.get_parameter_value("add_custom_amount_requirement")
+        self._is_valid_capability_name(name, "amount")
+        new_param = Parameter(
+            name=name,
+            input_types=["dict"],
+            type="dict",
+            output_type="dict",
+            tooltip=f"The custom amount requirement for {name}.",
+            traits={NumbersSelector(defaults={"min": 0, "max": 0}, step=1, overall_min=0, overall_max=10000)},
+            allowed_modes=self.allowed_modes,
+            user_defined=True,
+            parent_element_name="Host Config",
+        )
+        self.node.add_parameter(new_param)
+
+    def _add_custom_attribute_parameter(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002
+        name = self.node.get_parameter_value("add_custom_attribute_requirement")
+        self._is_valid_capability_name(name, "attr")
+        parent_group_name = "Host Config"
+
+        new_attr_anyof_param = Parameter(
+            name=f"{name}.anyOf",
+            input_types=["list"],
+            type="list",
+            output_type="list",
+            tooltip=f"The custom attribute anyOf requirement for {name}.",
+            ui_options={
+                "display_name": f"{name}.anyOf",
+                "placeholder_text": 'E.g., "value1, value2"',
+            },
+            traits={
+                MultiOptions(
+                    choices=[],
+                    placeholder="Enter acceptable values",
+                    max_selected_display=5,
+                    allow_user_created_options=True,
+                )
+            },
+            user_defined=True,
+            allowed_modes=self.allowed_modes,
+            parent_element_name=parent_group_name,
+        )
+        new_attr_allof_param = Parameter(
+            name=f"{name}.allOf",
+            input_types=["list"],
+            type="list",
+            output_type="list",
+            tooltip=f"The custom attribute allOf requirement for {name}.",
+            traits={
+                MultiOptions(
+                    choices=[],
+                    placeholder="Enter acceptable values",
+                    max_selected_display=5,
+                    allow_user_created_options=True,
+                )
+            },
+            user_defined=True,
+            allowed_modes=self.allowed_modes,
+            parent_element_name=parent_group_name,
+        )
+        self.node.add_parameter(new_attr_anyof_param)
+        self.node.add_parameter(new_attr_allof_param)
 
     @classmethod
     def get_param_names(cls) -> list[str]:
@@ -170,23 +264,45 @@ class DeadlineCloudHostConfigParameter:
             "gpus",
             "gpu_memory",
             "scratch_space",
-            "custom_amount_requirements",
-            "custom_attribute_requirements",
+            "add_custom_amount_requirement",
+            "add_custom_attribute_requirement",
         ]
 
     def _get_host_config_parameters(self) -> dict[str, Any]:
         """Get all host configuration parameters from the node."""
-        return {
-            "operating_system": self.node.get_parameter_value("operating_system"),
-            "cpu_architecture": self.node.get_parameter_value("cpu_architecture"),
-            "vcpu": self.node.get_parameter_value("vcpu"),
-            "memory": self.node.get_parameter_value("memory"),
-            "gpus": self.node.get_parameter_value("gpus"),
-            "gpu_memory": self.node.get_parameter_value("gpu_memory"),
-            "scratch_space": self.node.get_parameter_value("scratch_space"),
-            "custom_amount_requirements": self.node.get_parameter_value("custom_amount_requirements"),
-            "custom_attribute_requirements": self.node.get_parameter_value("custom_attribute_requirements"),
-        }
+        param_names = [
+            name
+            for name in self.get_param_names()
+            if name
+            not in ["run_on_all_worker_hosts", "add_custom_amount_requirement", "add_custom_attribute_requirement"]
+        ]
+        params = {name: self.node.get_parameter_value(name) for name in param_names}
+
+        # Merge in custom amount requirements
+        custom_amount_parameters = self._get_custom_requirement_parameters_by_type("amount")
+        for entry in (
+            [{p.name: self.node.get_parameter_value(p.name)} for p in custom_amount_parameters]
+            if custom_amount_parameters
+            else []
+        ):
+            params.update(entry)
+
+        # Merge in custom attribute requirements
+        custom_attribute_parameters = self._get_custom_requirement_parameters_by_type("attr")
+        for parameter in [c for c in custom_attribute_parameters if c.type == "list"]:
+            if parameter.name.endswith(".anyOf"):
+                attribute_type = "anyOf"
+            elif parameter.name.endswith(".allOf"):
+                attribute_type = "allOf"
+            else:
+                continue
+            attribute_name = parameter.name.split(f".{attribute_type}")[0]
+            if attribute_name not in params:
+                params[attribute_name] = {}
+            param_value = self.node.get_parameter_value(parameter.name)
+            if param_value:
+                params[attribute_name][attribute_type] = param_value
+        return params
 
     def _build_attribute_requirements(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Build attribute requirements for host configuration."""
@@ -208,10 +324,29 @@ class DeadlineCloudHostConfigParameter:
                 }
             )
 
-        if params["custom_attribute_requirements"]:
-            attributes.extend(params["custom_attribute_requirements"])
+        for param in [p for p in params.items() if "attr." in p[0] and p[0] not in [a["name"] for a in attributes]]:
+            custom_attribute_entry = self._create_attribute_entry(param[0], param[1])
+            if custom_attribute_entry:
+                attributes.append(custom_attribute_entry)
 
         return attributes
+
+    def _create_attribute_entry(self, name: str, config: dict[str, Any]) -> dict[str, Any] | None:
+        """Create an attribute entry if config has valid anyOf/allOf values."""
+        if not config or (not config.get("anyOf") and not config.get("allOf")):
+            return None
+
+        entry = {"name": name}
+
+        any_of = config.get("anyOf", [])
+        if any_of:
+            entry["anyOf"] = any_of
+
+        all_of = config.get("allOf", [])
+        if all_of:
+            entry["allOf"] = all_of
+
+        return entry
 
     def _create_amount_entry(
         self, name: str, config: dict[str, Any], multiplier: int = 1, default_min: int = 0
@@ -231,6 +366,16 @@ class DeadlineCloudHostConfigParameter:
             entry["max"] = max_val * multiplier
 
         return entry
+
+    def _get_custom_requirement_parameters_by_type(self, custom_requirement_type: str) -> list[Parameter]:
+        parameters = self.node.parameters
+        return [
+            p
+            for p in parameters
+            if p.name not in self.get_param_names()
+            and f"{custom_requirement_type}." in p.name
+            and p.parent_group_name == "Host Config"
+        ]
 
     def _build_amount_requirements(self, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Build amount requirements for host configuration."""
@@ -263,8 +408,10 @@ class DeadlineCloudHostConfigParameter:
         if scratch_entry:
             amounts.append(scratch_entry)
 
-        if params["custom_amount_requirements"]:
-            amounts.extend(params["custom_amount_requirements"])
+        for param in [p for p in params.items() if "amount." in p[0] and p[0] not in [a["name"] for a in amounts]]:
+            custom_amount_entry = self._create_amount_entry(param[0], param[1], default_min=0)
+            if custom_amount_entry:
+                amounts.append(custom_amount_entry)
 
         return amounts
 
@@ -308,31 +455,3 @@ class DeadlineCloudHostConfigParameter:
         if "anyOf" not in entry and "allOf" not in entry:
             errors.append(ValueError("Missing 'anyOf' and 'allOf' in attribute entry"))
         return errors if errors else None
-
-    def validate_custom_host_config(self) -> list[Exception] | None:
-        custom_amount_requirements = self.node.get_parameter_value("custom_amount_requirements")
-        custom_attribute_requirements = self.node.get_parameter_value("custom_attribute_requirements")
-
-        if custom_amount_requirements is not None:
-            custom_amount_requirements = cast("list", custom_amount_requirements)
-            for entry in custom_amount_requirements:
-                if not isinstance(entry, dict):
-                    continue
-
-                # Validate each entry in the custom amount requirements
-                errors = self._validate_amount_entry(entry)
-                if errors:
-                    return errors
-
-        if custom_attribute_requirements is not None:
-            custom_attribute_requirements = cast("list", custom_attribute_requirements)
-            for entry in custom_attribute_requirements:
-                if not isinstance(entry, dict):
-                    continue
-
-                # Validate each entry in the custom attribute requirements
-                errors = self._validate_attribute_entry(entry)
-                if errors:
-                    return errors
-
-        return None
