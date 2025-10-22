@@ -1,6 +1,6 @@
 version = 1
-revision = 3
-requires-python = "==3.12.*"
+revision = 2
+requires-python = ">=3.12.0, <3.13"
 
 [[package]]
 name = "aiofiles"
@@ -247,7 +247,7 @@ wheels = [
 [[package]]
 name = "griptape-nodes"
 version = "0.60.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#a390d278699d31727cc61744adf97c8589ae7209" }
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#778608ea2f5a5f43de605b999760ca4f4d5a10fb" }
 dependencies = [
     { name = "aiofiles" },
     { name = "binaryornot" },
