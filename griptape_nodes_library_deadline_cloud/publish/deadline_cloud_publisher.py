@@ -36,6 +36,12 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import (
+    CopyFileRequest,
+    CopyFileResultSuccess,
+    CopyTreeRequest,
+    CopyTreeResultSuccess,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
@@ -601,9 +607,17 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     abs_paths.append(p)
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
-                shutil.copytree(
-                    common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
+                copy_tree_request = CopyTreeRequest(
+                    source_path=str(common_root),
+                    destination_path=str(dest),
+                    ignore_patterns=[".venv", "__pycache__"],
+                    dirs_exist_ok=True,
                 )
+                copy_tree_result = GriptapeNodes.handle_request(copy_tree_request)
+                if not isinstance(copy_tree_result, CopyTreeResultSuccess):
+                    details = f"Failed to copy library files from '{common_root}' to '{dest}' for library '{library_ref.library_name}'."
+                    logger.error(details)
+                    raise TypeError(details)
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
                 library_paths.append(
                     (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
@@ -717,7 +731,17 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # 1. Copy workflow and dependencies to assets
             full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
-            shutil.copyfile(full_workflow_file_path, assets_dir / "workflow.py")
+            copy_file_request = CopyFileRequest(
+                source_path=full_workflow_file_path,
+                destination_path=str(assets_dir / "workflow.py"),
+            )
+            copy_file_result = GriptapeNodes.handle_request(copy_file_request)
+            if not isinstance(copy_file_result, CopyFileResultSuccess):
+                details = (
+                    f"Failed to copy workflow file from '{full_workflow_file_path}' to '{assets_dir / 'workflow.py'}'."
+                )
+                logger.error(details)
+                raise TypeError(details)  # noqa: TRY301
 
             init_file_path = local_publish_path / "__init__.py"
             shutil.copyfile(init_file_path, assets_dir / "__init__.py")
