@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
+from urllib.parse import urljoin
 
 import semver
 from botocore.exceptions import BotoCoreError, ClientError
@@ -26,6 +27,7 @@ from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
 )
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.flow_events import (
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
@@ -51,6 +53,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
     GetAllSecretValuesResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
+    PublishWorkflowProgressEvent,
     PublishWorkflowResultFailure,
     PublishWorkflowResultSuccess,
     SaveWorkflowRequest,
@@ -71,6 +74,8 @@ from publish.deadline_cloud_workflow_builder import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from boto3 import Session
     from deadline.job_attachments.models import StorageProfile
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -90,27 +95,30 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self,
         workflow_name: str,
         *,
-        execute_on_publish: bool = False,
         published_workflow_file_name: str | None = None,
         pickle_control_flow_result: bool = False,
     ) -> None:
         super().__init__(session=BaseDeadlineCloud._get_session())
         self._workflow_name = workflow_name
         self._published_workflow_file_name = published_workflow_file_name or f"{self._workflow_name}_aws_dc_executor"
-        self.execute_on_publish = execute_on_publish
         self._job_template: dict[str, Any] = {}
         self._deadline_cloud_start_flow_node_commands: SerializeNodeToCommandsResultSuccess | None = None
         self._unique_parameter_uuid_to_values: dict = {}
         self._set_parameter_value_commands_per_node: dict = {}
         self._node_name_to_uuid: dict = {}
         self.pickle_control_flow_result = pickle_control_flow_result
+        self._progress: float = 0.0
+        self._farm_id: str | None = None
+        self._queue_id: str | None = None
 
     def publish_workflow(self) -> ResultPayload:
         try:
             # Ensure the workflow file exists
+            self._emit_progress_event(10, f"Validating workflow '{self._workflow_name}'...")
             self._validate_workflow(self._workflow_name)
 
             # Get the workflow shape
+            self._emit_progress_event(10, "Gathering workflow details...")
             workflow_shape = GriptapeNodes.WorkflowManager().extract_workflow_shape(self._workflow_name)
             logger.info("Workflow shape: %s", workflow_shape)
 
@@ -120,14 +128,17 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             self._create_run_input = self._gather_deadline_cloud_start_flow_input(workflow_shape)
 
             # Package the workflow
+            self._emit_progress_event(10, "Packaging workflow...")
             package_path = self._package_workflow(self._workflow_name)
             logger.info("Workflow packaged to path: %s", package_path)
 
             # Publish the workflow to AWS Deadline Cloud
+            self._emit_progress_event(10, "Processing job attachments...")
             job_attachment_settings, manifests = self._process_job_attachments(package_path)
             logger.info("Workflow '%s' published successfully to AWS Deadline Cloud", self._workflow_name)
 
             # Generate an executor workflow that can invoke the published structure
+            self._emit_progress_event(20, "Generating executor workflow...")
             executor_workflow_path = self._generate_executor_workflow(
                 relative_dir_path=package_path,
                 models_dir_path=self._resolve_path(self._get_huggingface_cache_dir()),
@@ -135,10 +146,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 job_attachment_settings=job_attachment_settings,
                 workflow_shape=workflow_shape,
             )
+            self._emit_progress_event(100, "Workflow published successfully!")
 
             return PublishWorkflowResultSuccess(
                 published_workflow_file_path=str(executor_workflow_path),
                 result_details=f"Workflow '{self._workflow_name}' published successfully.",
+                metadata=self._get_publish_workflow_response_metadata(),
             )
         except (ValueError, RuntimeError, ClientError, BotoCoreError) as e:
             details = f"Failed to publish workflow '{self._workflow_name}'. Error: {e}"
@@ -151,6 +164,39 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             details = f"Unexpected error publishing workflow '{self._workflow_name}': {e}"
             logger.exception(details)
             return PublishWorkflowResultFailure(exception=e, result_details=details)
+
+    def _get_publish_workflow_response_metadata(self) -> dict[str, Any]:
+        monitor_url = self._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY,
+            "monitor_url",
+        )
+        if self._farm_id is not None:
+            monitor_url = urljoin(
+                monitor_url,
+                f"farms/{self._farm_id}/",
+            )
+        if self._queue_id is not None:
+            monitor_url = urljoin(
+                monitor_url,
+                f"queues/{self._queue_id}",
+            )
+        return {
+            "publish_target_link": monitor_url,
+            "publish_target_link_description": "Click to view the Deadline Cloud monitor for the targeted farm and queue.",
+        }
+
+    def _emit_progress_event(self, additional_progress: float, message: str) -> None:
+        self._progress += additional_progress
+        self._progress = min(self._progress, 100.0)
+        event = ExecutionGriptapeNodeEvent(
+            wrapped_event=ExecutionEvent(
+                payload=PublishWorkflowProgressEvent(
+                    progress=self._progress,
+                    message=message,
+                )
+            )
+        )
+        GriptapeNodes.EventManager().put_event(event)
 
     def _resolve_path(self, path_to_resolve: str) -> str:
         # Use resolve() to handle mapped drives
@@ -220,7 +266,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 workflow_version is not None
                 and min_supported_version is not None
                 and workflow_version < min_supported_version
-                and self.execute_on_publish
             ):
                 details = f"Workflow '{workflow_name}' has an unsupported schema version for executing on publish: {workflow.metadata.schema_version}. Minimum supported version for {LIBRARY_NAME} is {min_supported_version}. Please re-save the workflow and ensure it has a compatible schema version."
                 logger.error(details)
@@ -311,6 +356,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         storage_profile: StorageProfile | None,
         job_attachment_settings: JobAttachmentS3Settings,
         queue_session: Session,
+        on_uploading_assets: Callable[[Any], bool] | None = None,
     ) -> Attachments:
         """Upload specified paths as job attachments and return the attachments."""
         try:
@@ -348,7 +394,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 cache_directory,
             )
 
-            def on_uploading_assets(summary: Any) -> bool:
+            def default_on_uploading_assets(summary: Any) -> bool:
                 logger.info("Uploading assets: %s", summary)
                 return True
 
@@ -357,7 +403,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             (upload_summary, attachments) = s3_asset_manager.upload_assets(
                 manifests=manifests,
                 s3_check_cache_dir=cache_directory,
-                on_uploading_assets=on_uploading_assets,
+                on_uploading_assets=on_uploading_assets or default_on_uploading_assets,
             )
 
             logger.info("Upload completed: %s", upload_summary)
@@ -470,6 +516,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         """Process job attachments following the official Deadline Cloud pattern."""
         try:
             logger.info("Processing job attachments for: %s", package_path)
+            self._emit_progress_event(0, "Processing job attachments...")
 
             logger.debug("Package path exists: %s", Path(package_path).exists())
             logger.debug("Session region: %s", self._session.region_name)
@@ -497,6 +544,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 if "storage_profile_id" in start_flow_input:
                     storage_profile_id = start_flow_input["storage_profile_id"]
 
+            self._farm_id = farm_id
+            self._queue_id = queue_id
             logger.info("Using farm_id: %s, queue_id: %s", farm_id, queue_id)
             enable_models_as_attachments = self._get_config_value(
                 DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "enable_models_as_attachments", default=True
@@ -530,6 +579,14 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             if assets_dir.is_dir():
                 bundle_input_paths.extend(self.expand_directories_to_files([str(assets_dir)]))
 
+            def on_upload_assets(summary: Any) -> bool:
+                from deadline.job_attachments.progress_tracker import ProgressReportMetadata
+
+                if isinstance(summary, ProgressReportMetadata):
+                    progress = summary.progress * 0.1  # 10% of total progress
+                    self._emit_progress_event(progress, summary.progressMessage)
+                return True
+
             logger.info("Uploading %d job bundle files", len(bundle_input_paths))
             attachments = self.upload_paths_as_job_attachments(
                 input_paths=bundle_input_paths,
@@ -539,6 +596,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 storage_profile=storage_profile,
                 job_attachment_settings=job_attachment_settings,
                 queue_session=queue_session,
+                on_uploading_assets=on_upload_assets,
             )
 
             # 2. Upload model files separately (if enabled)
@@ -555,9 +613,13 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                         storage_profile=storage_profile,
                         job_attachment_settings=job_attachment_settings,
                         queue_session=queue_session,
+                        on_uploading_assets=on_upload_assets,
                     )
                     attachments.manifests.extend(model_attachments.manifests)
                     logger.info("Added %d model manifest(s)", len(model_attachments.manifests))
+
+            progress = 0 if enable_models_as_attachments else 10
+            self._emit_progress_event(progress, "Job attachments processed successfully.")
 
         except (ClientError, BotoCoreError) as e:
             details = f"AWS API error processing job attachments: {e}"
