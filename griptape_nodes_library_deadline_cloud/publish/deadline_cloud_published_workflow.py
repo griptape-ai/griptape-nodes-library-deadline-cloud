@@ -9,6 +9,7 @@ import tempfile
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError
 from deadline.client.api import get_queue_user_boto3_session
@@ -588,6 +589,9 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
         # Use the helper to handle exception based on connection status
         self._handle_failure_exception(RuntimeError(error_details))
 
+    def _generate_output_subdir(self) -> str:
+        return uuid4().hex
+
     def _process(self) -> None:
         # Reset execution state and result details at the start of each run
         self._clear_execution_status()
@@ -607,7 +611,8 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
             root_dir = str(attachments["manifests"][0]["rootPath"])
             input_json = self._collect_input_parameters()
-            output_path = Path(relative_dir_path) / "output"
+            output_dir_subdir = self._generate_output_subdir()
+            output_path = Path(relative_dir_path) / output_dir_subdir / "output"
 
             storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
                 farm_id, queue_id, storage_profile_id
@@ -634,6 +639,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                 "DataDir": {"path": root_dir},
                 "LocationToRemap": {"path": relative_dir_path},
                 "ModelsLocationToRemap": {"path": models_dir_path},
+                "OutputDir": {"string": output_dir_subdir},
                 "CondaChannels": {"string": self.get_parameter_value("conda_channels")},
                 "CondaPackages": {"string": self.get_parameter_value("conda_packages")},
             }
