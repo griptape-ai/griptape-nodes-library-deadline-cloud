@@ -612,7 +612,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
             root_dir = str(attachments["manifests"][0]["rootPath"])
             input_json = self._collect_input_parameters()
             output_dir_subdir = self._generate_output_subdir()
-            output_path = Path(relative_dir_path) / output_dir_subdir / "output"
+            output_path = Path(relative_dir_path) / "output" / output_dir_subdir
 
             storage_profile: StorageProfile | None = self._get_storage_profile_for_queue(
                 farm_id, queue_id, storage_profile_id
