@@ -61,6 +61,14 @@ class DeadlineCloudJobTemplateGenerator:
 
         parameter_definitions.append(
             {
+                "name": "OutputDir",
+                "type": "STRING",
+                "description": "Output folder subdirectory within DataDir",
+            }
+        )
+
+        parameter_definitions.append(
+            {
                 "name": "CondaChannels",
                 "type": "STRING",
                 "description": "Conda channels to install packages from",
@@ -163,6 +171,7 @@ logger.setLevel(logging.INFO)
 # Set up paths - use DataDir parameter for job attachments
 location_to_remap = r"{{{{Param.LocationToRemap}}}}"
 models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
+output_dir_subdirectory = r"{{{{Param.OutputDir}}}}"
 
 job_assets_dir = Path(location_to_remap) / "assets"
 synced_workflows_dir = Path(location_to_remap) / "output" / "synced_workflows"
@@ -175,7 +184,7 @@ if (job_assets_dir / ".env").exists():
 
 # Set HuggingFace hub cache directory for model cache, and print
 os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
-os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(Path(location_to_remap) / "output")
+os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(Path(location_to_remap) / "output" / output_dir_subdirectory)
 logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
 logger.info(f"Griptape workspace directory set to: {{os.environ['GTN_CONFIG_WORKSPACE_DIRECTORY']}}")
 
