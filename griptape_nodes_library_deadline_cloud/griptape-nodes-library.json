@@ -22,7 +22,12 @@
     "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
     "library_version": "0.63.0",
     "engine_version": "0.63.0",
-    "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
+    "tags": [
+      "Griptape",
+      "AI",
+      "AWS",
+      "Deadline Cloud"
+    ],
     "dependencies": {
       "pip_dependencies": [
         "boto3==1.40.70",
@@ -60,7 +65,7 @@
       "metadata": {
         "category": "aws_deadline_cloud/published_workflows",
         "description": "Node that runs a specific published workflow on AWS Deadline Cloud.",
-        "display_name": "AWS Deadline Cloud Published Workflow"
+        "display_name": "Deadline Cloud Published Workflow"
       }
     },
     {
@@ -69,7 +74,7 @@
       "metadata": {
         "category": "aws_deadline_cloud/published_workflows",
         "description": "Node that defines the end of a workflow and return parameters for a flow executing on AWS Deadline Cloud.",
-        "display_name": "AWS Deadline Cloud End Flow"
+        "display_name": "Deadline Cloud End Flow"
       }
     },
     {
@@ -78,9 +83,11 @@
       "metadata": {
         "category": "aws_deadline_cloud/published_workflows",
         "description": "Node that defines the start of a workflow and passes parameters for a flow on AWS Deadline Cloud.",
-        "display_name": "AWS Deadline Cloud Start Flow"
+        "display_name": "Deadline Cloud Start Flow"
       }
     }
   ],
-  "workflows": ["workflows/templates/deadline_cloud_hello_world.py"]
+  "workflows": [
+    "workflows/templates/deadline_cloud_hello_world.py"
+  ]
 }
