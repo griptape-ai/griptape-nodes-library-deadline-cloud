@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from botocore.client import BaseClient
     from deadline.job_attachments.models import StorageProfile
 
+# Suppress botocore logs
+logging.getLogger("botocore.tokens").setLevel(logging.ERROR)
+logging.getLogger("botocore.credentials").setLevel(logging.ERROR)
 
 T = TypeVar("T")
 
@@ -47,7 +50,7 @@ class BaseDeadlineCloud:
 
             except Exception:
                 msg = f"Failed to create boto3 session with profile '{profile_name}' and region '{region_name}'."
-                logger.exception(msg)
+                logger.debug(msg)
 
         return get_boto3_session()
 
@@ -123,10 +126,9 @@ class BaseDeadlineCloud:
             return api_func(*args, **kwargs)
         except Exception as e:
             msg = f"API call failed: {e}"
-            if raise_on_error:
-                logger.exception(msg)
-                raise
             logger.debug(msg)
+            if raise_on_error:
+                raise
             return None
 
     def _get_list_api_kwargs(self) -> dict:

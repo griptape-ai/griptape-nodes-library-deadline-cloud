@@ -44,7 +44,6 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
                 "   2. Ensure that your AWS credentials are valid, refreshed, and have the necessary permissions\n"
                 "   3. Refresh the libraries in the Griptape UI\n"
             )
-            logger.exception(msg)
             parameter_message = ParameterMessage(
                 name="deadline_cloud_credentials_parameter_message",
                 title="Deadline Cloud Credentials Configuration Warning",
