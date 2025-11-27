@@ -315,7 +315,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         return Path(workspace_dir) / static_files_dir
 
-    def _translate_worker_paths_to_local(
+    def _translate_worker_paths_to_local(  # noqa: C901
         self, workflow_output: dict[str, Any], output_paths: dict[str, list[str]], output_dir_subdir: str
     ) -> dict[str, Any]:
         """Translate Deadline worker paths in workflow output to local filesystem paths.
@@ -360,12 +360,11 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                         suffix = value[segment_idx + len(output_segment) :]
                         return local_output_path + suffix
                 return value
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 return {k: translate_value(v) for k, v in value.items()}
-            elif isinstance(value, list):
+            if isinstance(value, list):
                 return [translate_value(item) for item in value]
-            else:
-                return value
+            return value
 
         return translate_value(workflow_output)
 
