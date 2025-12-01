@@ -315,7 +315,62 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         return Path(workspace_dir) / static_files_dir
 
-    def _extract_workflow_output_from_output_paths(self, output_paths: dict[str, list[str]]) -> dict:
+    def _translate_worker_paths_to_local(  # noqa: C901
+        self, workflow_output: dict[str, Any], output_paths: dict[str, list[str]], output_dir_subdir: str
+    ) -> dict[str, Any]:
+        """Translate Deadline worker paths in workflow output to local filesystem paths.
+
+        Worker paths look like: /sessions/session-.../assetroot-.../output/<subdir>/...
+        These need to be translated to local paths like: /local/root/output/<subdir>/...
+
+        Args:
+            workflow_output: The workflow output dictionary containing worker paths.
+            output_paths: A mapping of local root paths to their relative output file paths.
+            output_dir_subdir: The unique output subdirectory (e.g., 'abc123def456').
+
+        Returns:
+            The workflow output with worker paths translated to local paths.
+        """
+        # Build the output segment we're looking for (e.g., 'output/abc123def456')
+        output_segment = f"output/{output_dir_subdir}"
+
+        # Find the local root path that contains our output directory
+        local_output_path: str | None = None
+        for local_root, output_files in output_paths.items():
+            for output_file in output_files:
+                if output_file.startswith(output_segment):
+                    local_output_path = str(Path(local_root) / output_segment)
+                    break
+            if local_output_path:
+                break
+
+        if not local_output_path:
+            # No matching output path found, return unchanged
+            return workflow_output
+
+        def translate_value(value: Any) -> Any:
+            """Recursively translate paths in a value."""
+            if isinstance(value, str):
+                # Check if this string contains the output segment from a worker path
+                if output_segment in value:
+                    # Find where the output segment starts and replace everything before it
+                    segment_idx = value.find(output_segment)
+                    if segment_idx != -1:
+                        # Get the suffix after the output segment base
+                        suffix = value[segment_idx + len(output_segment) :]
+                        return local_output_path + suffix
+                return value
+            if isinstance(value, dict):
+                return {k: translate_value(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [translate_value(item) for item in value]
+            return value
+
+        return translate_value(workflow_output)
+
+    def _extract_workflow_output_from_output_paths(
+        self, output_paths: dict[str, list[str]], output_dir_subdir: str
+    ) -> dict:
         """Extract workflow output from the output paths."""
         # output_paths is a dictionary of root paths to output file paths like:
         # {'/var/folders/3v/jg416m5115j47dxwzznmqfhc0000gn/T/flowy_deadline_bundle_3s0cvl9d': ['output/workflow_output.json']}  # noqa: ERA001
@@ -333,6 +388,10 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                     static_dir = self._get_static_files_directory()
                     # Copy the static file to the static directory
                     shutil.copy(static_file_path, static_dir / static_file_path.name)
+
+        # Translate worker paths to local paths
+        if workflow_output:
+            workflow_output = self._translate_worker_paths_to_local(workflow_output, output_paths, output_dir_subdir)
 
         return workflow_output
 
@@ -357,7 +416,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         return input_json
 
-    def _get_workflow_output(self, farm_id: str, job_id: str, queue_id: str) -> dict[str, Any]:
+    def _get_workflow_output(self, farm_id: str, job_id: str, queue_id: str, output_dir_subdir: str) -> dict[str, Any]:
         """Download and return the workflow output from the job."""
         deadline_client = self._get_client()
         queue_response = deadline_client.get_queue(farmId=farm_id, queueId=queue_id)
@@ -391,7 +450,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
             logger.info(output)
 
             output_paths_by_root = downloader.get_output_paths_by_root()
-            return self._extract_workflow_output_from_output_paths(output_paths_by_root)
+            return self._extract_workflow_output_from_output_paths(output_paths_by_root, output_dir_subdir)
         except Exception as e:
             details = f"Error downloading workflow output: {e}"
             logger.error(details)
@@ -664,6 +723,7 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                 farm_id=farm_id,
                 job_id=job_id,
                 queue_id=queue_id,
+                output_dir_subdir=output_dir_subdir,
             )
             self._map_output_parameters(output)
 
