@@ -288,7 +288,7 @@ wheels = [
 [[package]]
 name = "griptape-nodes"
 version = "0.64.1"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#3a93ac380848051f0b6aff4dc7ea2ce49ba8629e" }
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#967a4fe057761a92873f97f30aebfda67e927ab3" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aioshutil" },

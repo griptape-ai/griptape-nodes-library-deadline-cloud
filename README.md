@@ -38,15 +38,46 @@ After you've completed those and you have your engine up and running:
 
 ## Usage
 
-After configuring your Deadline Cloud settings and defaults, you can publish workflows to Deadline Cloud:
+After configuring your Deadline Cloud settings and defaults, you can execute Griptape Nodes workflows on Deadline Cloud as Jobs.
+
+### Publish Workflow
+
+The first method for executing Griptape Nodes workflows on Deadline Cloud is to utilize the Publish Workflow setup. The steps are as follows:
 
 1. Author a Workflow in the GUI Editor, using:
    1. A Deadline Cloud Start Flow node to expose the input Parameters to your Workflow
       1. Also specify any Deadline Cloud Job configuration you desire on this node
    1. A Deadline Cloud End Flow node to expose the output Parameters of your Workflow
 1. Click the 'Publish' button in the top right of the Editor (rocket ship icon)
-   1. Choose the AWS Deadline Cloud Library target for publishing to
+   1. Choose the `AWS Deadline Cloud Library` target for publishing to
    1. (Optional) Enter a name for the new workflow file which will be generated as a result of publishing
-   1. (Optional) Unselect `Execute workflow immediately after publishing` if you wish to run the published workflow from the Editor
 1. Open the newly generated workflow file in the Editor from the publish operation
 1. Click the `Run Workflow` button in the Editor to run the published workflow on Deadline Cloud as a Job
+
+![Workflow to publish](./images/deadline_cloud_publish_workflow.png)
+
+![Publish success](./images/deadline_cloud_publish_success.png)
+
+![Published executor workflow](./images/deadline_cloud_executor_workflow.png)
+
+This method is useful if you have a reusable workflow to run on Deadline Cloud, where you wish to reinvoke the workflow with varying input.
+
+### Deadline Cloud Execution Group
+
+The second method for executing Griptape Nodes workflows on Deadline Cloud is to utilize a Node Group configured for the Deadline Cloud execution environment. The steps are as follows:
+
+1. Author a Workflow in the GUI Editor:
+1. Select the Nodes of your workflow, and create a Group by:
+   1. Right clicking, then select Create Group
+   1. OR via the keyboard shortcut Cmd + G (Ctrl + G on Windows)
+1. Click the settings cog icon on the top right of the Group header
+1. Select the `execution_environment` of `AWS Deadline Cloud Library`
+1. Configure the settings within the panel as you desire for Deadline Cloud execution (just like the `Deadline Cloud Start Flow` Node)
+
+![Deadline Cloud Execution Group](./images/deadline_cloud_group.png)
+
+This method is useful if you have a workflow that would benefit from offloading certain Nodes to execute remotely on Deadline Cloud, and some Nodes that should run local on your machine.
+
+### Templates
+
+For some examples on using the AWS Deadline Cloud Library, check out the [templates](./griptape_nodes_library_deadline_cloud/workflows/templates)!
