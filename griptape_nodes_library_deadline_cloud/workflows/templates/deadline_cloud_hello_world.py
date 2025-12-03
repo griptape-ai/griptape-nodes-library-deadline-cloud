@@ -6,12 +6,12 @@
 # description = "A simple example demonstrating how a node can be tagged for execution on AWS Deadline Cloud within an existing workflow."
 # schema_version = "0.13.0"
 # engine_version_created_with = "0.64.1"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.51.1"]]
+# node_libraries_referenced = [["Griptape Nodes Library", "0.51.1"], ["AWS Deadline Cloud Library", "0.64.1"]]
 # node_types_used = [["Griptape Nodes Library", "AddTextToImage"], ["Griptape Nodes Library", "DisplayImage"], ["Griptape Nodes Library", "DisplayText"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "TextInput"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 2025-11-27T01:21:05.737759Z
-# last_modified_date = 2025-11-27T01:21:07.893551Z
+# creation_date = 2025-12-01T22:51:55.676587Z
+# last_modified_date = 2025-12-01T23:16:03.246140Z
 #
 # ///
 
@@ -44,53 +44,57 @@ if not context_manager.has_current_workflow():
    would be difficult to serialize.
 """
 top_level_unique_values_dict = {
-    "a7c708c1-1d39-4685-8254-86d2ffdb7064": pickle.loads(
+    "4af11d7d-b32a-4d75-806f-c6a421510117": pickle.loads(b"\x80\x04K\x00."),
+    "cf0f8055-3131-4429-b86a-d4e3410a4a4a": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00\x8c\x00\x94."),
+    "0ca3907e-1977-4f70-9cd6-6089a935ed6d": pickle.loads(
         b"\x80\x04\x95\x11\x00\x00\x00\x00\x00\x00\x00\x8c\rHello, world!\x94."
     ),
-    "2e7c226e-0072-42f0-b83e-a409a95af262": pickle.loads(b"\x80\x04K\x00."),
-    "e3403e4c-7e99-40f1-a89f-d0c8c4d051fa": pickle.loads(
+    "9f42bf68-765d-439b-802a-506111950a11": pickle.loads(
         b'\x80\x04\x95\x85\x00\x00\x00\x00\x00\x00\x00\x8c\x81This workflow demonstrates a simple "hello world" example for confirming AWS Deadline Cloud functionality is working as expected.\x94.'
     ),
-    "03f66f1d-d480-46d0-a190-8f1aa13efb58": pickle.loads(
-        b'\x80\x04\x95\xd3\x01\x00\x00\x00\x00\x00\x00X\xcc\x01\x00\x00This node will be executed on Deadline Cloud. The execution_environment parameter (normally hidden) has been un-hidden and assigned to be executed on the AWS Deadline Cloud environment.\n\nThis tells Griptape Nodes to submit this node for execution.\n\nTo change a node\'s execution environment:\n1. Select the node\n2. In the Sidebar Panels, select the Properties panel\n3. Unhide the "execution_environment" Parameter\n4. Select "AWS Deadline Cloud" in the drop-down.\x94.'
-    ),
-    "e04c5479-2c2b-43c2-a210-4d176f4adcb6": pickle.loads(
+    "416d6cee-8c18-48b8-ada3-43c8655eb920": pickle.loads(
         b"\x80\x04\x95p\x00\x00\x00\x00\x00\x00\x00\x8clThis is the happy path, indicating success. Your image will appear if Deadline Cloud completes successfully.\x94."
     ),
-    "71781058-4a0b-42b6-98f9-b509c30a48e9": pickle.loads(
+    "4f69c241-7b5d-4e05-8f6e-9011a87a4775": pickle.loads(
         b"\x80\x04\x95\x84\x00\x00\x00\x00\x00\x00\x00\x8c\x80If execution in Deadline Cloud fails, this path will be executed. The Display Text will provide information about what occurred.\x94."
     ),
-    "9eeca371-874d-4430-ac8d-2938fcba0428": pickle.loads(
+    "5c3b34ee-3ddc-4eeb-a49a-56bb5d44d9cf": pickle.loads(
+        b"\x80\x04\x95\x18\x01\x00\x00\x00\x00\x00\x00X\x11\x01\x00\x00This node will be executed on Deadline Cloud.\n\nThe NodeGroup settings can be configured to specify an execution_environment of `AWS Deadline Cloud Library`, which indicates that all Nodes within the group should be packaged and shipped up to Deadline Cloud to run as a Job.\x94."
+    ),
+    "b7d7f771-cf61-43ee-a858-9b56e0bf996d": pickle.loads(
         b"\x80\x04\x95\x1e\x00\x00\x00\x00\x00\x00\x00\x8c\x1aAWS Deadline Cloud Library\x94."
     ),
-    "ad44151d-b8ac-4c9f-b7c4-4883ba6150a4": pickle.loads(
+    "8c3a94d7-85d3-4c30-823a-93ee6638eabd": pickle.loads(
         b"\x80\x04\x95\x0f\x00\x00\x00\x00\x00\x00\x00\x8c\x0bHello World\x94."
+    ),
+    "bd96fd97-d765-4e90-a03a-298212597afc": pickle.loads(
+        b'\x80\x04\x95j\x00\x00\x00\x00\x00\x00\x00\x8cfA simple "hello world" example for confirming AWS Deadline Cloud functionality is working as expected.\x94.'
+    ),
+    "a17453a2-0bb9-49d9-af5e-351376b226d6": pickle.loads(
+        b"\x80\x04\x95\x11\x00\x00\x00\x00\x00\x00\x00\x8c\rHello, world!\x94."
     ),
 }
 
 "# Create the Flow, then do work within it as context."
 
 flow0_name = GriptapeNodes.handle_request(
-    CreateFlowRequest(parent_flow_name=None, set_as_new_context=False, metadata={})
+    CreateFlowRequest(parent_flow_name=None, flow_name="ControlFlow_1", set_as_new_context=False, metadata={})
 ).flow_name
 
 with GriptapeNodes.ContextManager().flow(flow0_name):
     node0_name = GriptapeNodes.handle_request(
         CreateNodeRequest(
-            node_type="AddTextToImage",
+            node_type="DisplayImage",
             specific_library_name="Griptape Nodes Library",
-            node_name="Add Text to Image",
+            node_name="Display Image",
             metadata={
-                "position": {"x": 51.54505367523552, "y": 119.02806986663131},
-                "tempId": "placing-1758837148767-insxe",
-                "library_node_metadata": {
-                    "category": "image",
-                    "description": "Create an image with text rendered on it",
-                },
+                "position": {"x": 1945.6666666666667, "y": 337.01202725017583},
+                "tempId": "placing-1764628982995-w9g86",
+                "library_node_metadata": {"category": "image", "description": "Display an image"},
                 "library": "Griptape Nodes Library",
-                "node_type": "AddTextToImage",
+                "node_type": "DisplayImage",
                 "showaddparameter": False,
-                "size": {"width": 600, "height": 800},
+                "size": {"width": 699, "height": 525},
                 "category": "image",
             },
             initial_setup=True,
@@ -98,36 +102,45 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
     ).node_name
     node1_name = GriptapeNodes.handle_request(
         CreateNodeRequest(
-            node_type="DisplayImage",
+            node_type="DisplayText",
             specific_library_name="Griptape Nodes Library",
-            node_name="Display Image",
+            node_name="Display Text",
             metadata={
-                "position": {"x": 1586.4924507506282, "y": 119.02806986663131},
-                "tempId": "placing-1758837310363-8s6gxf",
-                "library_node_metadata": {"category": "image", "description": "Display an image"},
+                "position": {"x": 1941.6666666666667, "y": 1156.6666666666667},
+                "tempId": "placing-1764629234821-3a48sq",
+                "library_node_metadata": NodeMetadata(
+                    category="text",
+                    description="DisplayText node",
+                    display_name="Display Text",
+                    tags=None,
+                    icon=None,
+                    color=None,
+                    group="display",
+                    deprecation=None,
+                ),
                 "library": "Griptape Nodes Library",
-                "node_type": "DisplayImage",
+                "node_type": "DisplayText",
                 "showaddparameter": False,
-                "category": "image",
-                "size": {"width": 600, "height": 386},
+                "size": {"width": 713, "height": 402},
+                "category": "text",
             },
             initial_setup=True,
         )
     ).node_name
     node2_name = GriptapeNodes.handle_request(
         CreateNodeRequest(
-            node_type="DisplayText",
+            node_type="TextInput",
             specific_library_name="Griptape Nodes Library",
-            node_name="Display Text",
+            node_name="Text Input",
             metadata={
-                "position": {"x": 1586.4924507506282, "y": 899.6984013372955},
-                "tempId": "placing-1758837335086-88fhvm",
-                "library_node_metadata": {"category": "text", "description": "DisplayText node"},
+                "position": {"x": 23.519849367752443, "y": 337.01202725017583},
+                "tempId": "placing-1764629407956-5xbh8",
+                "library_node_metadata": {"category": "text", "description": "TextInput node"},
                 "library": "Griptape Nodes Library",
-                "node_type": "DisplayText",
+                "node_type": "TextInput",
                 "showaddparameter": False,
+                "size": {"width": 600, "height": 236},
                 "category": "text",
-                "size": {"width": 609, "height": 366},
             },
             initial_setup=True,
         )
@@ -138,8 +151,8 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             specific_library_name="Griptape Nodes Library",
             node_name="Workflow Summary",
             metadata={
-                "position": {"x": -30.690424398704693, "y": -181.39616055846403},
-                "tempId": "placing-1758837299352-bihgmj",
+                "position": {"x": 23.519849367752443, "y": 86.6904695896311},
+                "tempId": "placing-1764629334034-pdx54k",
                 "library_node_metadata": {
                     "category": "misc",
                     "description": "Create a note node to provide helpful context in your workflow",
@@ -147,8 +160,8 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 "library": "Griptape Nodes Library",
                 "node_type": "Note",
                 "showaddparameter": False,
+                "size": {"width": 600, "height": 227},
                 "category": "misc",
-                "size": {"width": 600, "height": 216},
             },
             initial_setup=True,
         )
@@ -157,25 +170,19 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
         CreateNodeRequest(
             node_type="Note",
             specific_library_name="Griptape Nodes Library",
-            node_name="Execution Environment",
+            node_name="Successful Path",
             metadata={
-                "position": {"x": 765.6666666666667, "y": -181.39616055846403},
-                "tempId": "placing-1758837431549-7gxmie",
-                "library_node_metadata": NodeMetadata(
-                    category="misc",
-                    description="Create a note node to provide helpful context in your workflow",
-                    display_name="Note",
-                    tags=None,
-                    icon="notepad-text",
-                    color=None,
-                    group="create",
-                    deprecation=None,
-                ),
+                "position": {"x": 1941.6666666666667, "y": 86.69046958963114},
+                "tempId": "placing-1764629458611-z3mgu",
+                "library_node_metadata": {
+                    "category": "misc",
+                    "description": "Create a note node to provide helpful context in your workflow",
+                },
                 "library": "Griptape Nodes Library",
                 "node_type": "Note",
                 "showaddparameter": False,
+                "size": {"width": 693, "height": 217},
                 "category": "misc",
-                "size": {"width": 587, "height": 439},
             },
             initial_setup=True,
         )
@@ -184,10 +191,10 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
         CreateNodeRequest(
             node_type="Note",
             specific_library_name="Griptape Nodes Library",
-            node_name="Success Path",
+            node_name="Unsuccessful Path",
             metadata={
-                "position": {"x": 1586.4924507506282, "y": -181.39616055846403},
-                "tempId": "placing-1758837618543-ox8yyh",
+                "position": {"x": 1941.6666666666667, "y": 941.0120272501758},
+                "tempId": "placing-1764629487845-mzlqzi",
                 "library_node_metadata": {
                     "category": "misc",
                     "description": "Create a note node to provide helpful context in your workflow",
@@ -195,8 +202,8 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 "library": "Griptape Nodes Library",
                 "node_type": "Note",
                 "showaddparameter": False,
+                "size": {"width": 708, "height": 196},
                 "category": "misc",
-                "size": {"width": 600, "height": 182},
             },
             initial_setup=True,
         )
@@ -205,10 +212,10 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
         CreateNodeRequest(
             node_type="Note",
             specific_library_name="Griptape Nodes Library",
-            node_name="Unsuccessful Path",
+            node_name="Execution Environment",
             metadata={
-                "position": {"x": 1586.4924507506282, "y": 635.5936481286911},
-                "tempId": "placing-1758837618543-ox8yyh",
+                "position": {"x": 749.0223191048804, "y": 76.6904695896311},
+                "tempId": "placing-1764629928719-jksmwo",
                 "library_node_metadata": {
                     "category": "misc",
                     "description": "Create a note node to provide helpful context in your workflow",
@@ -216,38 +223,59 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 "library": "Griptape Nodes Library",
                 "node_type": "Note",
                 "showaddparameter": False,
+                "size": {"width": 1003, "height": 251},
                 "category": "misc",
-                "size": {"width": 600, "height": 200},
             },
             initial_setup=True,
         )
     ).node_name
-    node7_name = GriptapeNodes.handle_request(
-        CreateNodeRequest(
-            node_type="TextInput",
-            specific_library_name="Griptape Nodes Library",
-            node_name="Text Input",
-            metadata={
-                "position": {"x": -30.690424398704693, "y": 505.0280698666313},
-                "tempId": "placing-1758838088763-c9jyok",
-                "library_node_metadata": {"category": "text", "description": "TextInput node"},
-                "library": "Griptape Nodes Library",
-                "node_type": "TextInput",
-                "showaddparameter": False,
-                "category": "text",
-                "size": {"width": 600, "height": 236},
-            },
-            initial_setup=True,
+    """# Create the Flow, then do work within it as context."""
+    flow1_name = GriptapeNodes.handle_request(
+        CreateFlowRequest(
+            parent_flow_name=flow0_name, flow_name="NodeGroup_subflow", set_as_new_context=False, metadata={}
         )
-    ).node_name
+    ).flow_name
+    with GriptapeNodes.ContextManager().flow(flow1_name):
+        node7_name = GriptapeNodes.handle_request(
+            CreateNodeRequest(
+                node_type="AddTextToImage",
+                specific_library_name="Griptape Nodes Library",
+                node_name="Add Text to Image",
+                metadata={
+                    "position": {"x": 208.4920383067995, "y": 155.01202725017583},
+                    "tempId": "placing-1764628967865-yle2e",
+                    "library_node_metadata": {
+                        "category": "image",
+                        "description": "Create an image with text rendered on it",
+                    },
+                    "library": "Griptape Nodes Library",
+                    "node_type": "AddTextToImage",
+                    "showaddparameter": False,
+                    "size": {"width": 600, "height": 800},
+                    "category": "image",
+                },
+                initial_setup=True,
+            )
+        ).node_name
+        with GriptapeNodes.ContextManager().node(node7_name):
+            GriptapeNodes.handle_request(
+                SetParameterValueRequest(
+                    parameter_name="text",
+                    node_name=node7_name,
+                    value=top_level_unique_values_dict["a17453a2-0bb9-49d9-af5e-351376b226d6"],
+                    initial_setup=True,
+                    is_output=False,
+                )
+            )
     node8_name = GriptapeNodes.handle_request(
         CreateNodeGroupRequest(
             node_group_name="NodeGroup",
             metadata={
-                "position": {"x": 715.6666666666667, "y": 309.57600983905206},
-                "size": {"width": 700, "height": 944.0000000000001},
+                "position": {"x": 749.0223191048804, "y": 363.6283026876037},
+                "size": {"width": 1015, "height": 1062},
                 "node_type": "NodeGroupNode",
                 "execution_environment": {
+                    "Griptape Nodes Library": {"start_flow_node": "StartFlow", "parameter_names": {}},
                     "Griptape Cloud Library": {
                         "start_flow_node": "GriptapeCloudStartFlow",
                         "parameter_names": [
@@ -291,80 +319,213 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                         ],
                     },
                 },
+                "subflow_name": "NodeGroup_subflow",
+                "expanded_dimensions": {"width": 1015, "height": 1062},
+                "left_parameters": ["exec_in", "text"],
+                "right_parameters": ["exec_out", "image", "failure", "result_details"],
             },
-            node_names_to_add=[node0_name],
+            node_names_to_add=[node7_name],
         )
     ).node_group_name
+    with GriptapeNodes.ContextManager().node(node8_name):
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="exec_in",
+                tooltip="Enter control flow for exec_in.",
+                type="parametercontroltype",
+                input_types=["parametercontroltype"],
+                output_type="parametercontroltype",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="text",
+                tooltip="Enter text/string for text.",
+                type="str",
+                input_types=["str"],
+                output_type="str",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="exec_out",
+                tooltip="Enter control flow for exec_out.",
+                type="parametercontroltype",
+                input_types=["parametercontroltype"],
+                output_type="parametercontroltype",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="image",
+                tooltip="Enter ImageUrlArtifact for image.",
+                type="ImageUrlArtifact",
+                input_types=["ImageUrlArtifact"],
+                output_type="ImageUrlArtifact",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="failure",
+                tooltip="Enter control flow for failure.",
+                type="parametercontroltype",
+                input_types=["parametercontroltype"],
+                output_type="parametercontroltype",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
+        GriptapeNodes.handle_request(
+            AddParameterToNodeRequest(
+                parameter_name="result_details",
+                tooltip="Enter text/string for result_details.",
+                type="str",
+                input_types=["str"],
+                output_type="str",
+                ui_options={},
+                mode_allowed_input=True,
+                mode_allowed_property=True,
+                mode_allowed_output=True,
+                initial_setup=True,
+            )
+        )
     GriptapeNodes.handle_request(
         CreateConnectionRequest(
-            source_node_name=node0_name,
+            source_node_name=node2_name,
             source_parameter_name="exec_out",
-            target_node_name=node1_name,
+            target_node_name=node8_name,
             target_parameter_name="exec_in",
             initial_setup=True,
         )
     )
     GriptapeNodes.handle_request(
         CreateConnectionRequest(
-            source_node_name=node0_name,
+            source_node_name=node8_name,
+            source_parameter_name="exec_in",
+            target_node_name=node7_name,
+            target_parameter_name="exec_in",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node2_name,
+            source_parameter_name="text",
+            target_node_name=node8_name,
+            target_parameter_name="text",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node8_name,
+            source_parameter_name="text",
+            target_node_name=node7_name,
+            target_parameter_name="text",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node7_name,
+            source_parameter_name="exec_out",
+            target_node_name=node8_name,
+            target_parameter_name="exec_out",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node8_name,
+            source_parameter_name="exec_out",
+            target_node_name=node0_name,
+            target_parameter_name="exec_in",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node7_name,
             source_parameter_name="image",
-            target_node_name=node1_name,
+            target_node_name=node8_name,
             target_parameter_name="image",
             initial_setup=True,
         )
     )
     GriptapeNodes.handle_request(
         CreateConnectionRequest(
-            source_node_name=node0_name,
+            source_node_name=node8_name,
+            source_parameter_name="image",
+            target_node_name=node0_name,
+            target_parameter_name="image",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node7_name,
             source_parameter_name="failure",
-            target_node_name=node2_name,
+            target_node_name=node8_name,
+            target_parameter_name="failure",
+            initial_setup=True,
+        )
+    )
+    GriptapeNodes.handle_request(
+        CreateConnectionRequest(
+            source_node_name=node8_name,
+            source_parameter_name="failure",
+            target_node_name=node1_name,
             target_parameter_name="exec_in",
             initial_setup=True,
         )
     )
     GriptapeNodes.handle_request(
         CreateConnectionRequest(
-            source_node_name=node0_name,
+            source_node_name=node7_name,
             source_parameter_name="result_details",
-            target_node_name=node2_name,
-            target_parameter_name="text",
+            target_node_name=node8_name,
+            target_parameter_name="result_details",
             initial_setup=True,
         )
     )
     GriptapeNodes.handle_request(
         CreateConnectionRequest(
-            source_node_name=node7_name,
-            source_parameter_name="text",
-            target_node_name=node0_name,
+            source_node_name=node8_name,
+            source_parameter_name="result_details",
+            target_node_name=node1_name,
             target_parameter_name="text",
-            initial_setup=True,
-        )
-    )
-    GriptapeNodes.handle_request(
-        CreateConnectionRequest(
-            source_node_name=node7_name,
-            source_parameter_name="exec_out",
-            target_node_name=node0_name,
-            target_parameter_name="exec_in",
             initial_setup=True,
         )
     )
     with GriptapeNodes.ContextManager().node(node0_name):
         GriptapeNodes.handle_request(
             SetParameterValueRequest(
-                parameter_name="text",
-                node_name=node0_name,
-                value=top_level_unique_values_dict["a7c708c1-1d39-4685-8254-86d2ffdb7064"],
-                initial_setup=True,
-                is_output=False,
-            )
-        )
-    with GriptapeNodes.ContextManager().node(node1_name):
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
                 parameter_name="width",
-                node_name=node1_name,
-                value=top_level_unique_values_dict["2e7c226e-0072-42f0-b83e-a409a95af262"],
+                node_name=node0_name,
+                value=top_level_unique_values_dict["4af11d7d-b32a-4d75-806f-c6a421510117"],
                 initial_setup=True,
                 is_output=True,
             )
@@ -372,10 +533,30 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
         GriptapeNodes.handle_request(
             SetParameterValueRequest(
                 parameter_name="height",
-                node_name=node1_name,
-                value=top_level_unique_values_dict["2e7c226e-0072-42f0-b83e-a409a95af262"],
+                node_name=node0_name,
+                value=top_level_unique_values_dict["4af11d7d-b32a-4d75-806f-c6a421510117"],
                 initial_setup=True,
                 is_output=True,
+            )
+        )
+    with GriptapeNodes.ContextManager().node(node1_name):
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="text",
+                node_name=node1_name,
+                value=top_level_unique_values_dict["cf0f8055-3131-4429-b86a-d4e3410a4a4a"],
+                initial_setup=True,
+                is_output=False,
+            )
+        )
+    with GriptapeNodes.ContextManager().node(node2_name):
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="text",
+                node_name=node2_name,
+                value=top_level_unique_values_dict["0ca3907e-1977-4f70-9cd6-6089a935ed6d"],
+                initial_setup=True,
+                is_output=False,
             )
         )
     with GriptapeNodes.ContextManager().node(node3_name):
@@ -383,7 +564,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="note",
                 node_name=node3_name,
-                value=top_level_unique_values_dict["e3403e4c-7e99-40f1-a89f-d0c8c4d051fa"],
+                value=top_level_unique_values_dict["9f42bf68-765d-439b-802a-506111950a11"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -393,7 +574,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="note",
                 node_name=node4_name,
-                value=top_level_unique_values_dict["03f66f1d-d480-46d0-a190-8f1aa13efb58"],
+                value=top_level_unique_values_dict["416d6cee-8c18-48b8-ada3-43c8655eb920"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -403,7 +584,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="note",
                 node_name=node5_name,
-                value=top_level_unique_values_dict["e04c5479-2c2b-43c2-a210-4d176f4adcb6"],
+                value=top_level_unique_values_dict["4f69c241-7b5d-4e05-8f6e-9011a87a4775"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -413,17 +594,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="note",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["71781058-4a0b-42b6-98f9-b509c30a48e9"],
-                initial_setup=True,
-                is_output=False,
-            )
-        )
-    with GriptapeNodes.ContextManager().node(node7_name):
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
-                parameter_name="text",
-                node_name=node7_name,
-                value=top_level_unique_values_dict["a7c708c1-1d39-4685-8254-86d2ffdb7064"],
+                value=top_level_unique_values_dict["5c3b34ee-3ddc-4eeb-a49a-56bb5d44d9cf"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -433,7 +604,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="execution_environment",
                 node_name=node8_name,
-                value=top_level_unique_values_dict["9eeca371-874d-4430-ac8d-2938fcba0428"],
+                value=top_level_unique_values_dict["b7d7f771-cf61-43ee-a858-9b56e0bf996d"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -442,7 +613,43 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_job_name",
                 node_name=node8_name,
-                value=top_level_unique_values_dict["ad44151d-b8ac-4c9f-b7c4-4883ba6150a4"],
+                value=top_level_unique_values_dict["8c3a94d7-85d3-4c30-823a-93ee6638eabd"],
+                initial_setup=True,
+                is_output=False,
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="deadlinecloudstartflow_job_description",
+                node_name=node8_name,
+                value=top_level_unique_values_dict["bd96fd97-d765-4e90-a03a-298212597afc"],
+                initial_setup=True,
+                is_output=False,
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="deadlinecloudstartflow_max_failed_tasks",
+                node_name=node8_name,
+                value=top_level_unique_values_dict["4af11d7d-b32a-4d75-806f-c6a421510117"],
+                initial_setup=True,
+                is_output=False,
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="deadlinecloudstartflow_max_task_retries",
+                node_name=node8_name,
+                value=top_level_unique_values_dict["4af11d7d-b32a-4d75-806f-c6a421510117"],
+                initial_setup=True,
+                is_output=False,
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="text",
+                node_name=node8_name,
+                value=top_level_unique_values_dict["0ca3907e-1977-4f70-9cd6-6089a935ed6d"],
                 initial_setup=True,
                 is_output=False,
             )
