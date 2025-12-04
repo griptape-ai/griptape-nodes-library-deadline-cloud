@@ -45,6 +45,14 @@
       }
     },
     {
+      "aws_deadline_cloud/execution": {
+        "color": "border-green-500",
+        "title": "Deadline Cloud Execution",
+        "description": "Deadline Cloud Execution Nodes",
+        "icon": "Cloud"
+      }
+    },
+    {
       "aws_deadline_cloud/published_workflows": {
         "color": "border-green-500",
         "title": "Deadline Cloud Published Workflows",
@@ -54,6 +62,15 @@
     }
   ],
   "nodes": [
+    {
+      "class_name": "DeadlineCloudMultiTaskGroup",
+      "file_path": "execution/deadline_cloud_multi_task_group.py",
+      "metadata": {
+        "category": "aws_deadline_cloud/execution",
+        "description": "NodeGroupNode that iterates over a list of input to run a subflow as a Task per input, submitted as a single Job.",
+        "display_name": "Deadline Cloud Multi Task Group"
+      }
+    },
     {
       "class_name": "DeadlineCloudPublishedWorkflow",
       "file_path": "publish/deadline_cloud_published_workflow.py",

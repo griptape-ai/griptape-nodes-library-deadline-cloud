@@ -22,6 +22,11 @@ class DeadlineCloudResourceOptions(Options):
 
     def converters_for_trait(self) -> list[Callable]:
         def converter(value: Any) -> Any:
+            # Handle empty choices list
+            if not self.choices:
+                logger.warning("No choices available for %s, returning None", self.value_field)
+                return None
+
             if value not in self.choices:
                 attempt_to_get_value = next(
                     (key for key, val in self.choices_value_lookup.items() if val == value), None
@@ -32,7 +37,7 @@ class DeadlineCloudResourceOptions(Options):
                     msg = f"Selection '{value}' is not in choices. Defaulting to first choice: '{self.choices[0]}'."
                     logger.warning(msg)
                     value = self.choices[0]
-            value = self.choices_value_lookup.get(value, self.choices[0])
+            value = self.choices_value_lookup.get(value, self.choices[0] if self.choices else None)
             msg = f"Converted choice for {self.value_field} into value: {value}"
             logger.info(msg)
             return value
@@ -41,6 +46,10 @@ class DeadlineCloudResourceOptions(Options):
 
     def validators_for_trait(self) -> list[Callable[[Parameter, Any], Any]]:
         def validator(param: Parameter, value: Any) -> None:
+            # Allow None values (used when no choices are available, e.g., on worker without credentials)
+            if value is None:
+                return
+
             if value not in list(self.choices_value_lookup.values()):
                 msg = f"Attempted to set Parameter '{param.name}' to value '{value}', but that was not one of the available choices."
 
