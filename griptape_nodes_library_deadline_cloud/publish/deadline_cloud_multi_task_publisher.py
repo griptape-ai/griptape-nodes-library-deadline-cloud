@@ -56,6 +56,8 @@ class MultiTaskPublisherConfig:
     pickle_control_flow_result: bool = True
     # Host config parameters
     host_requirements: dict[str, Any] | None = None
+    # EndFlow parameter name that maps to new_item_to_add (for result extraction)
+    result_parameter_name: str | None = None
 
 
 class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
@@ -597,8 +599,96 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
             logger.error(details)
             raise RuntimeError(details) from e
 
-    def _extract_multi_task_results(self, output_paths_by_root: dict[str, list[str]]) -> list[Any]:
+    def _get_static_files_directory(self) -> Path:
+        """Get the static files directory path."""
+        workspace_dir = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value("static_files_directory")
+        return Path(workspace_dir) / static_files_dir
+
+    def _copy_static_files(self, output_paths_by_root: dict[str, list[str]]) -> None:
+        """Copy static files from output to the static files directory.
+
+        Args:
+            output_paths_by_root: Dictionary mapping root paths to output file paths
+        """
+        import shutil
+
+        static_dir = self._get_static_files_directory()
+        static_dir.mkdir(parents=True, exist_ok=True)
+
+        for root_path, output_files in output_paths_by_root.items():
+            for output_file in output_files:
+                if "output" in output_file and "staticfiles" in output_file:
+                    static_file_path = Path(root_path) / output_file
+                    if static_file_path.exists():
+                        shutil.copy(static_file_path, static_dir / static_file_path.name)
+                        logger.debug("Copied static file: %s", static_file_path.name)
+
+    def _get_output_dir_subdir(self) -> str:
+        """Get the output directory subdirectory name."""
+        return self._multi_task_config.workflow_name.replace(" ", "_")
+
+    def _translate_worker_paths_to_local(  # noqa: C901
+        self, value: Any, output_paths_by_root: dict[str, list[str]]
+    ) -> Any:
+        """Translate Deadline worker paths in a value to local filesystem paths.
+
+        Worker paths look like: /sessions/session-.../assetroot-.../output/<subdir>/...
+        These need to be translated to local paths like: /local/root/output/<subdir>/...
+
+        Args:
+            value: The value that may contain worker paths (can be str, dict, list, or other).
+            output_paths_by_root: A mapping of local root paths to their relative output file paths.
+
+        Returns:
+            The value with worker paths translated to local paths.
+        """
+        output_dir_subdir = self._get_output_dir_subdir()
+        output_segment = f"output/{output_dir_subdir}"
+
+        # Find the local root path that contains our output directory
+        local_output_path: str | None = None
+        for local_root, output_files in output_paths_by_root.items():
+            for output_file in output_files:
+                if output_file.startswith(output_segment):
+                    local_output_path = str(Path(local_root) / output_segment)
+                    break
+            if local_output_path:
+                break
+
+        if not local_output_path:
+            # No matching output path found, return unchanged
+            return value
+
+        def translate_value(val: Any) -> Any:
+            """Recursively translate paths in a value."""
+            if isinstance(val, str):
+                # Check if this string contains the output segment from a worker path
+                if output_segment in val:
+                    # Find where the output segment starts and replace everything before it
+                    segment_idx = val.find(output_segment)
+                    if segment_idx != -1:
+                        # Get the suffix after the output segment base
+                        suffix = val[segment_idx + len(output_segment) :]
+                        return local_output_path + suffix
+                return val
+            if isinstance(val, dict):
+                return {k: translate_value(v) for k, v in val.items()}
+            if isinstance(val, list):
+                return [translate_value(item) for item in val]
+            return val
+
+        return translate_value(value)
+
+    def _extract_multi_task_results(self, output_paths_by_root: dict[str, list[str]]) -> list[Any]:  # noqa: C901
         """Extract results from downloaded output files for each task.
+
+        Each task writes its output to output_X.json where X is the task index.
+        The JSON structure is: {"task_index": X, "result": {end_node_name: {param_name: value, ...}}}
+
+        This method also:
+        - Copies any static files to the static files directory
+        - Translates worker paths in results to local filesystem paths
 
         Args:
             output_paths_by_root: Dictionary mapping root paths to output file paths
@@ -606,42 +696,60 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         Returns:
             List of results, one per task, in order of task index
         """
+        import re
+
+        # Copy any static files to the static files directory
+        self._copy_static_files(output_paths_by_root)
+
         # Initialize results list with None for each task
         results: list[Any] = [None] * self.task_count
 
-        # Find and parse workflow_output.json files
+        # Get the result parameter name from config (maps to new_item_to_add)
+        result_param_name = self._multi_task_config.result_parameter_name
+
+        # Find and parse output_X.json files
         for root_path, output_files in output_paths_by_root.items():
             for output_file in output_files:
-                if output_file.endswith("workflow_output.json"):
-                    workflow_file_path = Path(root_path) / output_file
+                # Match output_X.json pattern
+                match = re.match(r"output_(\d+)\.json$", Path(output_file).name)
+                if match:
+                    task_index = int(match.group(1))
+                    output_file_path = Path(root_path) / output_file
                     try:
-                        with workflow_file_path.open(encoding="utf-8") as f:
-                            workflow_output = json.load(f)
+                        with output_file_path.open(encoding="utf-8") as f:
+                            task_output = json.load(f)
 
-                        # Extract the result - the workflow output contains the EndFlow outputs
-                        # For now, we just return the entire output as the result
-                        # The task index might need to be inferred from the file path
-                        # For multi-task, each task writes to the same relative path, but
-                        # Deadline Cloud separates them - we may need to handle this differently
+                        # Extract the result value
+                        # File structure: {"task_index": X, "result": {end_node_name: {param_name: value}}}
+                        task_result = task_output.get("result", {})
 
-                        # If there's only one workflow_output.json, use it for all tasks
-                        # This would happen if all tasks wrote to the same output location
-                        # In a proper multi-task setup, we'd have task-specific outputs
-                        if self.task_count == 1:
-                            results[0] = workflow_output
-                        else:
-                            # Try to determine task index from path or content
-                            # For now, collect all outputs and return them
-                            for i in range(self.task_count):
-                                if results[i] is None:
-                                    results[i] = workflow_output
+                        # If we have a specific parameter to extract, find it
+                        if result_param_name:
+                            # The result dict has end_node_name as key, then params inside
+                            extracted_value = None
+                            for end_node_params in task_result.values():
+                                if isinstance(end_node_params, dict) and result_param_name in end_node_params:
+                                    extracted_value = end_node_params[result_param_name]
                                     break
+                            # Translate worker paths to local paths in the extracted value
+                            if extracted_value is not None:
+                                extracted_value = self._translate_worker_paths_to_local(
+                                    extracted_value, output_paths_by_root
+                                )
+                            if task_index < self.task_count:
+                                results[task_index] = extracted_value
+                        elif task_index < self.task_count:
+                            # No specific parameter, return the full result with translated paths
+                            results[task_index] = self._translate_worker_paths_to_local(
+                                task_result, output_paths_by_root
+                            )
 
                         # Clean up the downloaded file
-                        workflow_file_path.unlink(missing_ok=True)
+                        output_file_path.unlink(missing_ok=True)
+                        logger.debug("Extracted result for task %d from %s", task_index, output_file)
 
                     except Exception as e:
-                        logger.warning("Failed to parse workflow output file %s: %s", workflow_file_path, e)
+                        logger.warning("Failed to parse task output file %s: %s", output_file_path, e)
 
-        logger.info("Extracted results for %d tasks", len([r for r in results if r is not None]))
+        logger.info("Extracted results for %d/%d tasks", len([r for r in results if r is not None]), self.task_count)
         return results

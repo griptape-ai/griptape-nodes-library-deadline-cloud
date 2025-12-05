@@ -27,7 +27,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
     """
 
     @staticmethod
-    def generate_job_template(
+    def generate_job_template(  # noqa: PLR0913
         job_bundle_dir: Path,
         workflow_name: str,
         library_paths: list[str],

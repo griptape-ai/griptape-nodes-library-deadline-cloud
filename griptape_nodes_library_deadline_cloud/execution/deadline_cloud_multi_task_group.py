@@ -55,7 +55,7 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
         self,
         name: str,
         metadata: dict[Any, Any] | None = None,
-    ):
+    ) -> None:
         BaseNodeGroup.__init__(self, name=name, metadata=metadata)
 
         # Metadata overrides
@@ -210,7 +210,7 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
         self.remap_to_internal(nodes, connections)
         self._map_external_connections_for_nodes(nodes, connections, node_names_in_group)
 
-    def map_external_connection(self, conn: Connection, *, is_incoming: bool) -> bool:
+    def map_external_connection(self, conn: Connection, *, is_incoming: bool) -> bool:  # noqa: ARG002
         """Track a connection to/from a node in the group and rewire it through a proxy parameter.
 
         Args:
@@ -535,7 +535,80 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
 
     _START_FLOW_PARAM_PREFIX = "deadlinecloudstartflow"
 
-    def _get_start_flow_parameter_value(self, param_name: str) -> Any:
+    def _get_result_parameter_name(
+        self,
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+    ) -> str | None:
+        """Find the EndFlow parameter name that corresponds to new_item_to_add.
+
+        The new_item_to_add parameter receives input from a node inside the group.
+        When the workflow is packaged, that connection becomes an EndFlow parameter.
+        We need to find that EndFlow parameter name to extract the correct result value.
+
+        Args:
+            package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter_name_mappings
+
+        Returns:
+            The EndFlow parameter name that maps to new_item_to_add, or None if not found
+        """
+        from griptape_nodes.retained_mode.events.connection_events import (
+            ListConnectionsForNodeRequest,
+            ListConnectionsForNodeResultSuccess,
+        )
+
+        # Get incoming connections to this node's new_item_to_add parameter
+        list_connections_request = ListConnectionsForNodeRequest(node_name=self.name)
+        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            logger.warning("Failed to list connections for node %s", self.name)
+            return None
+
+        incoming_connections = list_connections_result.incoming_connections
+
+        # Find the connection to new_item_to_add
+        source_node_name = None
+        source_param_name = None
+        for conn in incoming_connections:
+            if conn.target_parameter_name == "new_item_to_add":
+                source_node_name = conn.source_node_name
+                source_param_name = conn.source_parameter_name
+                break
+
+        if source_node_name is None or source_param_name is None:
+            logger.info("No connection found to new_item_to_add parameter")
+            return None
+
+        # Get the End node's parameter mappings (index 1 in the list)
+        # The end_node_param_mappings tells us: endflow_param_name -> OriginalNodeParameter(source_node, source_param)
+        if len(package_result.parameter_name_mappings) < 2:  # noqa: PLR2004
+            logger.warning("Package result does not have end node parameter mappings")
+            return None
+
+        end_node_mapping = package_result.parameter_name_mappings[1]
+        end_node_param_mappings = end_node_mapping.parameter_mappings
+
+        # Find the EndFlow parameter that corresponds to the source node/param
+        for endflow_param_name, original_node_param in end_node_param_mappings.items():
+            if (
+                original_node_param.node_name == source_node_name
+                and original_node_param.parameter_name == source_param_name
+            ):
+                logger.info(
+                    "Found result parameter mapping: %s.%s -> EndFlow.%s",
+                    source_node_name,
+                    source_param_name,
+                    endflow_param_name,
+                )
+                return endflow_param_name
+
+        logger.warning(
+            "Could not find EndFlow parameter for %s.%s",
+            source_node_name,
+            source_param_name,
+        )
+        return None
+
+    def _get_start_flow_parameter_value(self, param_name: str, default: Any | None = None) -> Any:
         """Get a parameter value with the StartFlow node prefix.
 
         Parameters from the DeadlineCloudStartFlow node are added to this group
@@ -543,12 +616,14 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
 
         Args:
             param_name: The original parameter name without prefix
+            default: Default value to return if parameter is not set
 
         Returns:
             The parameter value
         """
         prefixed_name = f"{self._START_FLOW_PARAM_PREFIX}_{param_name}"
-        return self.get_parameter_value(prefixed_name)
+        value = self.get_parameter_value(prefixed_name)
+        return value if value is not None else default
 
     def _build_host_requirements(self) -> dict[str, Any] | None:
         """Build host requirements dict from prefixed StartFlow parameters.
@@ -647,18 +722,23 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
         # Get parameter values for each iteration
         parameter_values_per_iteration = self._get_merged_parameter_values_for_iterations(package_result)
 
+        # Get the EndFlow parameter name that maps to new_item_to_add for result extraction
+        result_parameter_name = self._get_result_parameter_name(package_result)
+
         # Get job submission parameters from this node (with StartFlow prefix)
         farm_id = self._get_start_flow_parameter_value("farm_id")
         queue_id = self._get_start_flow_parameter_value("queue_id")
         storage_profile_id = self._get_start_flow_parameter_value("storage_profile_id")
-        job_name = self._get_start_flow_parameter_value("job_name") or f"{self.name} Multi-Task Job"
-        job_description = self._get_start_flow_parameter_value("job_description") or f"Multi-task job for {self.name}"
-        priority = self._get_start_flow_parameter_value("priority") or 50
-        initial_state = self._get_start_flow_parameter_value("initial_state") or "READY"
-        max_failed_tasks = self._get_start_flow_parameter_value("max_failed_tasks") or 50
-        max_task_retries = self._get_start_flow_parameter_value("max_task_retries") or 10
-        attachment_input_paths = self._get_start_flow_parameter_value("attachment_input_paths") or []
-        attachment_output_paths = self._get_start_flow_parameter_value("attachment_output_paths") or []
+        job_name = self._get_start_flow_parameter_value("job_name", default=f"{self.name} Multi-Task Job")
+        job_description = self._get_start_flow_parameter_value(
+            "job_description", default=f"Multi-task job for {self.name}"
+        )
+        priority = self._get_start_flow_parameter_value("priority", default=50)
+        initial_state = self._get_start_flow_parameter_value("initial_state", default="READY")
+        max_failed_tasks = self._get_start_flow_parameter_value("max_failed_tasks", default=50)
+        max_task_retries = self._get_start_flow_parameter_value("max_task_retries", default=10)
+        attachment_input_paths = self._get_start_flow_parameter_value("attachment_input_paths", default=[])
+        attachment_output_paths = self._get_start_flow_parameter_value("attachment_output_paths", default=[])
 
         # Build host requirements from host config parameters
         host_requirements: dict[str, Any] | None = None
@@ -684,6 +764,7 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
             attachment_output_paths=attachment_output_paths,
             pickle_control_flow_result=True,
             host_requirements=host_requirements,
+            result_parameter_name=result_parameter_name,
         )
 
         # Create and execute the multi-task publisher

@@ -14,6 +14,7 @@ logger.setLevel(logging.INFO)
 
 class DeadlineCloudWorkflowExecutor(LocalWorkflowExecutor):
     def _submit_output(self, output: dict) -> None:
+        self.output = output
         logger.info("Submitting output to Deadline Cloud: %s", output)
 
         workspace_directory = GriptapeNodes.ConfigManager().get_config_value("workspace_directory")
