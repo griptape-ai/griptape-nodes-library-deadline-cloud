@@ -1,87 +1,46 @@
 from __future__ import annotations
 
 import logging
-import threading
-import warnings
-from abc import ABC
-from collections.abc import Callable, Generator, Iterable
-from dataclasses import dataclass, field
-from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from griptape_nodes.common.node_executor import PublishLocalWorkflowResult, PublishWorkflowStartEndNodes
+from griptape_nodes.common.node_executor import PublishWorkflowStartEndNodes
 from griptape_nodes.exe_types.core_types import (
-    BaseNodeElement,
-    ControlParameter,
-    ControlParameterInput,
-    ControlParameterOutput,
-    NodeMessageResult,
     Parameter,
-    ParameterContainer,
-    ParameterDictionary,
-    ParameterGroup,
-    ParameterList,
-    ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
-    Trait,
 )
+from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
+from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
-    CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
     Connection,
-    NodeGroupNode,
-)
-from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
-from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.retained_mode.events.base_events import (
-    ExecutionEvent,
-    ExecutionGriptapeNodeEvent,
-    ProgressEvent,
-    RequestPayload,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
-    CreateConnectionRequest,
     DeleteConnectionRequest,
-    DeleteConnectionResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
 )
-from griptape_nodes.retained_mode.events.parameter_events import (
-    AddParameterToNodeRequest,
-    AddParameterToNodeResultSuccess,
-    RemoveElementEvent,
-    RemoveParameterFromNodeRequest,
-)
-from griptape_nodes.retained_mode.events.workflow_events import (
-    SaveWorkflowFileFromSerializedFlowRequest,
-    SaveWorkflowFileFromSerializedFlowResultSuccess,
-)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils import async_utils
 from publish import LIBRARY_NAME
 from publish.deadline_cloud_end_flow import DeadlineCloudEndFlow
 from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.connections import Connections
-    from griptape_nodes.exe_types.core_types import NodeMessagePayload
-    from griptape_nodes.node_library.library_registry import Library, LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
 
-class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
-    """A NodeGroupNode that represents a Deadline Job defined with multiple Tasks.
+class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
+    """A SubflowNodeGroup that represents a Deadline Job defined with multiple Tasks.
 
-    This NodeGroupNode is designed to encapsulate multiple tasks that are part of a single Job
+    This SubflowNodeGroup is designed to encapsulate multiple tasks that are part of a single Job
     submitted to the AWS Deadline Cloud render farm management system.
 
     The subflow defined by the Nodes within this Group is the unit of work that will be performed by each task.
@@ -97,10 +56,9 @@ class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
         name: str,
         metadata: dict[Any, Any] | None = None,
     ):
-        BaseNode.__init__(self, name=name, metadata=metadata)
+        BaseNodeGroup.__init__(self, name=name, metadata=metadata)
 
         # Metadata overrides
-        self.metadata["node_type"] = "NodeGroupNode"
         self.metadata["color"] = "#00c951"
         self.metadata["hideaddparameter"] = True
 
@@ -122,9 +80,6 @@ class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
             "start_flow_node": "StartFlow",
             "parameter_names": {},
         }
-
-        # Don't create subflow in __init__ - it will be created on-demand when nodes are added
-        # or restored during deserialization
 
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
@@ -164,13 +119,13 @@ class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
         self.metadata["right_parameters"] = ["new_item_to_add", "results"]
 
     def _add_start_flow_parameters(self) -> None:
-        """Add parameters from ONLY the DeadlineCloudStartFlow nodes to this NodeGroupNode.
+        """Add parameters from ONLY the DeadlineCloudStartFlow nodes to this SubflowNodeGroup.
 
         For the AWS Deadline Cloud Library that has registered a PublishWorkflowRequest handler with
         a StartFlow node, this method:
         1. Creates a temporary instance of that StartFlow node
         2. Extracts all its parameters
-        3. Adds them to this NodeGroupNode with a prefix based on the class name
+        3. Adds them to this SubflowNodeGroup with a prefix based on the class name
         4. Stores metadata mapping execution environments to their parameters
         """
         from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
@@ -420,7 +375,7 @@ class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
                 if source_param_name != "current_item":
                     continue
 
-                # If target is a NodeGroupNode (this node), follow the internal connection
+                # If target is a SubflowNodeGroup (this node), follow the internal connection
                 node_manager = GriptapeNodes.NodeManager()
                 flow_manager = GriptapeNodes.FlowManager()
                 try:
@@ -430,7 +385,7 @@ class DeadlineCloudMultiTaskGroup(NodeGroupNode, BaseNode):
                     logger.error(msg)
                     continue
 
-                if isinstance(target_node, NodeGroupNode):
+                if isinstance(target_node, SubflowNodeGroup):
                     # Get connections from this proxy parameter to find the actual internal target
                     connections = flow_manager.get_connections()
                     proxy_param = target_node.get_parameter_by_name(target_param_name)
