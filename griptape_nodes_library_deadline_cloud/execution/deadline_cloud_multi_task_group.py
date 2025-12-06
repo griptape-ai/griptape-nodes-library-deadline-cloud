@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from griptape_nodes.common.node_executor import PublishWorkflowStartEndNodes
 from griptape_nodes.exe_types.core_types import (
@@ -13,7 +13,6 @@ from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
-    BaseNode,
     Connection,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -28,9 +27,6 @@ from griptape_nodes.traits.options import Options
 from publish import LIBRARY_NAME
 from publish.deadline_cloud_end_flow import DeadlineCloudEndFlow
 from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.connections import Connections
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -71,7 +67,6 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
             traits={Options(choices=[LIBRARY_NAME, LOCAL_EXECUTION])},
         )
         self.add_parameter(self.execution_environment)
-        self.nodes = {}
         # Track mapping from proxy parameter name to (original_node, original_param_name)
         self._proxy_param_to_connections = {}
         if "execution_environment" not in self.metadata:
@@ -146,69 +141,6 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
             raise ValueError(msg)
 
         self._process_library_start_flow_parameters(LIBRARY_NAME, event_handlers[LIBRARY_NAME])
-
-    def _map_external_connections_for_nodes(
-        self, nodes: list[BaseNode], connections: Connections, node_names_in_group: set[str]
-    ) -> None:
-        """Map external connections for nodes being added to the group.
-
-        Args:
-            nodes: List of nodes being added
-            connections: Connections object from FlowManager
-            node_names_in_group: Set of all node names currently in the group
-        """
-        for node in nodes:
-            outgoing_connections = connections.get_all_outgoing_connections(node)
-            for conn in outgoing_connections:
-                if conn.target_node.name not in node_names_in_group:
-                    self.map_external_connection(
-                        conn=conn,
-                        is_incoming=False,
-                    )
-
-            incoming_connections = connections.get_all_incoming_connections(node)
-            for conn in incoming_connections:
-                if conn.source_node.name not in node_names_in_group:
-                    self.map_external_connection(
-                        conn=conn,
-                        is_incoming=True,
-                    )
-
-    def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
-        """Add nodes to the group and track their connections.
-
-        Args:
-            nodes: List of nodes to add to the group
-        """
-        from griptape_nodes.retained_mode.events.node_events import (
-            MoveNodeToNewFlowRequest,
-            MoveNodeToNewFlowResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        self._remove_nodes_from_existing_parents(nodes)
-        self._add_nodes_to_group_dict(nodes)
-
-        # Create subflow on-demand if it doesn't exist
-        subflow_name = self.metadata.get("subflow_name")
-        if subflow_name is None:
-            self._create_subflow()
-            subflow_name = self.metadata.get("subflow_name")
-
-        if subflow_name is not None:
-            for node in nodes:
-                move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=subflow_name)
-                move_result = GriptapeNodes.handle_request(move_request)
-                if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
-                    msg = "%s failed to move node '%s' to subflow: %s", self.name, node.name, move_result.result_details
-                    logger.error(msg)
-                    raise RuntimeError(msg)  # noqa: TRY004
-
-        connections = GriptapeNodes.FlowManager().get_connections()
-        node_names_in_group = set(self.nodes.keys())
-        self.metadata["node_names_in_group"] = list(node_names_in_group)
-        self.remap_to_internal(nodes, connections)
-        self._map_external_connections_for_nodes(nodes, connections, node_names_in_group)
 
     def map_external_connection(self, conn: Connection, *, is_incoming: bool) -> bool:  # noqa: ARG002
         """Track a connection to/from a node in the group and rewire it through a proxy parameter.

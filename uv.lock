@@ -288,7 +288,7 @@ wheels = [
 [[package]]
 name = "griptape-nodes"
 version = "0.65.1"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=task%2Fconvert-node-group-to-subflow-group#fdb70e5c79e7aaa628a88553092c3306b13d8585" }
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#78bec9a7a802736364ba38d65cfc94e2859b62db" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aioshutil" },
@@ -351,7 +351,7 @@ requires-dist = [
     { name = "boto3", specifier = "==1.40.70" },
     { name = "botocore", specifier = "==1.40.70" },
     { name = "deadline", specifier = "==0.53.3" },
-    { name = "griptape-nodes", git = "https://github.com/griptape-ai/griptape-nodes?rev=task%2Fconvert-node-group-to-subflow-group" },
+    { name = "griptape-nodes", git = "https://github.com/griptape-ai/griptape-nodes?rev=main" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "huggingface-hub", specifier = ">=1.0.1" },
     { name = "python-dotenv", specifier = "==1.1.1" },

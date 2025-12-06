@@ -97,6 +97,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         Returns:
             List of results, one per task, in order of task index
         """
+        workflow_file_path: Path | None = None
         try:
             # 1. Save the packaged workflow as a file
             logger.info("Saving packaged workflow for multi-task execution...")
@@ -148,6 +149,9 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
             details = f"Unexpected error during multi-task execution: {e}"
             logger.exception(details)
             raise RuntimeError(details) from e
+        finally:
+            if workflow_file_path is not None:
+                workflow_file_path.unlink(missing_ok=True)
 
     async def _save_workflow_file(self) -> SaveWorkflowFileFromSerializedFlowResultSuccess:
         """Save the packaged workflow as a runnable workflow file.
