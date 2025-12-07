@@ -678,6 +678,9 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
         if not run_on_all_worker_hosts:
             host_requirements = self._build_host_requirements()
 
+        # Get the node names from this group for model gathering
+        group_node_names = list(self.get_all_nodes().keys())
+
         # Create publisher config
         config = MultiTaskPublisherConfig(
             workflow_name=self.name,
@@ -697,6 +700,7 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
             pickle_control_flow_result=True,
             host_requirements=host_requirements,
             result_parameter_name=result_parameter_name,
+            group_node_names=group_node_names,
         )
 
         # Create and execute the multi-task publisher

@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.deadline_cloud_job_poller import DeadlineCloudJobPoller
 from publish.deadline_cloud_multi_task_template_generator import DeadlineCloudMultiTaskJobTemplateGenerator
 from publish.deadline_cloud_publisher import DeadlineCloudPublisher
@@ -54,10 +55,9 @@ class MultiTaskPublisherConfig:
     attachment_input_paths: list[str] | None = None
     attachment_output_paths: list[str] | None = None
     pickle_control_flow_result: bool = True
-    # Host config parameters
     host_requirements: dict[str, Any] | None = None
-    # EndFlow parameter name that maps to new_item_to_add (for result extraction)
     result_parameter_name: str | None = None
+    group_node_names: list[str] | None = None
 
 
 class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
@@ -387,6 +387,32 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 json.dump(flow_input, f, indent=2, default=str)
             logger.debug("Generated input file: %s", input_file)
 
+    def _gather_models_for_group(self) -> list[str]:
+        """Gather HuggingFace model names from the group's child nodes.
+
+        This method checks each node in the group for parameters that match
+        known HuggingFace repository names in the local cache.
+
+        Returns:
+            List of HuggingFace model repository names used by nodes in the group
+        """
+        group_node_names = self._multi_task_config.group_node_names
+        if not group_node_names:
+            logger.info("No group node names provided, skipping model gathering")
+            return []
+
+        huggingface_repo_names = self._get_huggingface_repo_names()
+        if not huggingface_repo_names:
+            logger.info("No HuggingFace repos found in cache, skipping model gathering")
+            return []
+
+        models: list[str] = []
+        for node_name in group_node_names:
+            models.extend(self._get_model_parameters_for_node(node_name, huggingface_repo_names))
+
+        logger.info("Found %d model(s) in group nodes: %s", len(models), models)
+        return models
+
     def _process_multi_task_job_attachments(self, package_path: str) -> tuple[JobAttachmentS3Settings, Attachments]:
         """Process and upload job attachments for multi-task job.
 
@@ -399,6 +425,11 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         farm_id = self._multi_task_config.farm_id
         queue_id = self._multi_task_config.queue_id
         storage_profile_id = self._multi_task_config.storage_profile_id
+
+        # Check if model attachments are enabled
+        enable_models_as_attachments = self._get_config_value(
+            DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, "enable_models_as_attachments", default=True
+        )
 
         deadline_client = self._get_client()
 
@@ -440,6 +471,24 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
             job_attachment_settings=job_attachment_settings,
             queue_session=queue_session,
         )
+
+        # Upload model files separately (if enabled)
+        if enable_models_as_attachments:
+            model_names = self._gather_models_for_group()
+            model_paths = self._get_model_paths(model_names)
+            if model_paths:
+                logger.info("Uploading %d model files", len(model_paths))
+                model_attachments = self.upload_paths_as_job_attachments(
+                    input_paths=model_paths,
+                    output_paths=[],
+                    farm_id=farm_id,
+                    queue_id=queue_id,
+                    storage_profile=storage_profile,
+                    job_attachment_settings=job_attachment_settings,
+                    queue_session=queue_session,
+                )
+                attachments.manifests.extend(model_attachments.manifests)
+                logger.info("Added %d model manifest(s)", len(model_attachments.manifests))
 
         return job_attachment_settings, attachments
 
