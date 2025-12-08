@@ -20,8 +20,8 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing AWS Deadline Cloud APIs and services.",
-    "library_version": "0.64.1",
-    "engine_version": "0.64.1",
+    "library_version": "0.65.1",
+    "engine_version": "0.65.1",
     "tags": ["Griptape", "AI", "AWS", "Deadline Cloud"],
     "dependencies": {
       "pip_dependencies": [
@@ -45,6 +45,14 @@
       }
     },
     {
+      "aws_deadline_cloud/execution": {
+        "color": "border-green-500",
+        "title": "Deadline Cloud Execution",
+        "description": "Deadline Cloud Execution Nodes",
+        "icon": "Cloud"
+      }
+    },
+    {
       "aws_deadline_cloud/published_workflows": {
         "color": "border-green-500",
         "title": "Deadline Cloud Published Workflows",
@@ -54,6 +62,16 @@
     }
   ],
   "nodes": [
+    {
+      "class_name": "DeadlineCloudMultiTaskGroup",
+      "file_path": "execution/deadline_cloud_multi_task_group.py",
+      "metadata": {
+        "category": "aws_deadline_cloud/execution",
+        "description": "SubflowNodeGroup that iterates over a list of input to run a subflow as a Task per input, submitted as a single Job.",
+        "display_name": "Deadline Cloud Multi Task Group",
+        "is_node_group": true
+      }
+    },
     {
       "class_name": "DeadlineCloudPublishedWorkflow",
       "file_path": "publish/deadline_cloud_published_workflow.py",

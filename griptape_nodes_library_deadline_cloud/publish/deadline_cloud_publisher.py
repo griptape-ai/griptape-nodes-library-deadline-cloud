@@ -689,7 +689,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
         return library_paths
 
-    def __get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
+    def _get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
         """Determines the install source of the Griptape Nodes package.
 
         Returns:
@@ -837,7 +837,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             self._write_env_file(assets_dir / ".env", env_file_mapping)
 
             # 5. Create requirements.txt
-            source, commit_id = self.__get_install_source()
+            source, commit_id = self._get_install_source()
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
 

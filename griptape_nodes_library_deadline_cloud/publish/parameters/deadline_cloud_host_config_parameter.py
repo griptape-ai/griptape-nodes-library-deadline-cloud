@@ -268,27 +268,35 @@ class DeadlineCloudHostConfigParameter:
             "add_custom_attribute_requirement",
         ]
 
-    def _get_host_config_parameters(self) -> dict[str, Any]:
-        """Get all host configuration parameters from the node."""
+    @classmethod
+    def _get_host_config_parameters_for_node(cls, node: BaseNode) -> dict[str, Any]:
+        """Get all host configuration parameters from a node.
+
+        Args:
+            node: The node to get parameters from
+
+        Returns:
+            Dictionary of host configuration parameter names to values
+        """
         param_names = [
             name
-            for name in self.get_param_names()
+            for name in cls.get_param_names()
             if name
             not in ["run_on_all_worker_hosts", "add_custom_amount_requirement", "add_custom_attribute_requirement"]
         ]
-        params = {name: self.node.get_parameter_value(name) for name in param_names}
+        params = {name: node.get_parameter_value(name) for name in param_names}
 
         # Merge in custom amount requirements
-        custom_amount_parameters = self._get_custom_requirement_parameters_by_type("amount")
+        custom_amount_parameters = cls._get_custom_requirement_parameters_by_type_for_node(node, "amount")
         for entry in (
-            [{p.name: self.node.get_parameter_value(p.name)} for p in custom_amount_parameters]
+            [{p.name: node.get_parameter_value(p.name)} for p in custom_amount_parameters]
             if custom_amount_parameters
             else []
         ):
             params.update(entry)
 
         # Merge in custom attribute requirements
-        custom_attribute_parameters = self._get_custom_requirement_parameters_by_type("attr")
+        custom_attribute_parameters = cls._get_custom_requirement_parameters_by_type_for_node(node, "attr")
         for parameter in [c for c in custom_attribute_parameters if c.type == "list"]:
             if parameter.name.endswith(".anyOf"):
                 attribute_type = "anyOf"
@@ -299,12 +307,17 @@ class DeadlineCloudHostConfigParameter:
             attribute_name = parameter.name.split(f".{attribute_type}")[0]
             if attribute_name not in params:
                 params[attribute_name] = {}
-            param_value = self.node.get_parameter_value(parameter.name)
+            param_value = node.get_parameter_value(parameter.name)
             if param_value:
                 params[attribute_name][attribute_type] = param_value
         return params
 
-    def _build_attribute_requirements(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+    def _get_host_config_parameters(self) -> dict[str, Any]:
+        """Get all host configuration parameters from the node."""
+        return self._get_host_config_parameters_for_node(self.node)
+
+    @classmethod
+    def _build_attribute_requirements(cls, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Build attribute requirements for host configuration."""
         attributes = []
 
@@ -325,13 +338,14 @@ class DeadlineCloudHostConfigParameter:
             )
 
         for param in [p for p in params.items() if "attr." in p[0] and p[0] not in [a["name"] for a in attributes]]:
-            custom_attribute_entry = self._create_attribute_entry(param[0], param[1])
+            custom_attribute_entry = cls._create_attribute_entry(param[0], param[1])
             if custom_attribute_entry:
                 attributes.append(custom_attribute_entry)
 
         return attributes
 
-    def _create_attribute_entry(self, name: str, config: dict[str, Any]) -> dict[str, Any] | None:
+    @classmethod
+    def _create_attribute_entry(cls, name: str, config: dict[str, Any]) -> dict[str, Any] | None:
         """Create an attribute entry if config has valid anyOf/allOf values."""
         if not config or (not config.get("anyOf") and not config.get("allOf")):
             return None
@@ -348,8 +362,9 @@ class DeadlineCloudHostConfigParameter:
 
         return entry
 
+    @classmethod
     def _create_amount_entry(
-        self, name: str, config: dict[str, Any], multiplier: int = 1, default_min: int = 0
+        cls, name: str, config: dict[str, Any], multiplier: int = 1, default_min: int = 0
     ) -> dict[str, Any] | None:
         """Create an amount entry if config has valid min/max values."""
         if not config or (config.get("min", 0) <= 0 and config.get("max", 0) <= 0):
@@ -367,62 +382,86 @@ class DeadlineCloudHostConfigParameter:
 
         return entry
 
-    def _get_custom_requirement_parameters_by_type(self, custom_requirement_type: str) -> list[Parameter]:
-        parameters = self.node.parameters
+    @classmethod
+    def _get_custom_requirement_parameters_by_type_for_node(
+        cls, node: BaseNode, custom_requirement_type: str
+    ) -> list[Parameter]:
+        """Get custom requirement parameters of a specific type from a node.
+
+        Args:
+            node: The node to get parameters from
+            custom_requirement_type: The type of custom requirement ("amount" or "attr")
+
+        Returns:
+            List of Parameter objects matching the custom requirement type
+        """
+        parameters = node.parameters
         return [
             p
             for p in parameters
-            if p.name not in self.get_param_names()
+            if p.name not in cls.get_param_names()
             and f"{custom_requirement_type}." in p.name
             and p.parent_group_name == "Host Config"
         ]
 
-    def _build_amount_requirements(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+    def _get_custom_requirement_parameters_by_type(self, custom_requirement_type: str) -> list[Parameter]:
+        return self._get_custom_requirement_parameters_by_type_for_node(self.node, custom_requirement_type)
+
+    @classmethod
+    def _build_amount_requirements(cls, params: dict[str, Any]) -> list[dict[str, Any]]:
         """Build amount requirements for host configuration."""
         amounts = []
 
         # vCPU (defaults to min of 1)
-        vcpu_entry = self._create_amount_entry("amount.worker.vcpu", params["vcpu"], default_min=1)
+        vcpu_entry = cls._create_amount_entry("amount.worker.vcpu", params["vcpu"], default_min=1)
         if vcpu_entry:
             amounts.append(vcpu_entry)
 
         # Memory (GiB to MiB conversion, defaults to min of 0)
-        memory_entry = self._create_amount_entry("amount.worker.memory", params["memory"], 1024, default_min=0)
+        memory_entry = cls._create_amount_entry("amount.worker.memory", params["memory"], 1024, default_min=0)
         if memory_entry:
             amounts.append(memory_entry)
 
         # GPUs (defaults to min of 0)
-        gpu_entry = self._create_amount_entry("amount.worker.gpu", params["gpus"], default_min=0)
+        gpu_entry = cls._create_amount_entry("amount.worker.gpu", params["gpus"], default_min=0)
         if gpu_entry:
             amounts.append(gpu_entry)
 
         # GPU memory (GiB to MiB conversion, defaults to min of 0)
-        gpu_memory_entry = self._create_amount_entry(
+        gpu_memory_entry = cls._create_amount_entry(
             "amount.worker.gpu.memory", params["gpu_memory"], 1024, default_min=0
         )
         if gpu_memory_entry:
             amounts.append(gpu_memory_entry)
 
         # Scratch space (GiB to MiB conversion, defaults to min of 0)
-        scratch_entry = self._create_amount_entry("amount.worker.scratch", params["scratch_space"], 1024, default_min=0)
+        scratch_entry = cls._create_amount_entry("amount.worker.scratch", params["scratch_space"], 1024, default_min=0)
         if scratch_entry:
             amounts.append(scratch_entry)
 
         for param in [p for p in params.items() if "amount." in p[0] and p[0] not in [a["name"] for a in amounts]]:
-            custom_amount_entry = self._create_amount_entry(param[0], param[1], default_min=0)
+            custom_amount_entry = cls._create_amount_entry(param[0], param[1], default_min=0)
             if custom_amount_entry:
                 amounts.append(custom_amount_entry)
 
         return amounts
 
     # https://github.com/OpenJobDescription/openjd-specifications/wiki/2023-09-Template-Schemas#3311-amountcapabilityname
-    def get_host_config_job_template_dict(self) -> dict[str, Any]:
-        """Build host configuration dictionary for job template."""
-        params = self._get_host_config_parameters()
-        amounts = self._build_amount_requirements(params)
-        attributes = self._build_attribute_requirements(params)
+    @classmethod
+    def get_host_config_job_template_dict_for_node(cls, node: BaseNode) -> dict[str, Any]:
+        """Build host configuration dictionary for job template from a node's parameters.
 
-        host_config = {}
+        Args:
+            node: The node to get host configuration parameters from
+
+        Returns:
+            Dictionary containing 'amounts' and/or 'attributes' for host requirements
+        """
+        params = cls._get_host_config_parameters_for_node(node)
+        amounts = cls._build_amount_requirements(params)
+        attributes = cls._build_attribute_requirements(params)
+
+        host_config: dict[str, Any] = {}
 
         if amounts:
             host_config["amounts"] = amounts
@@ -430,6 +469,10 @@ class DeadlineCloudHostConfigParameter:
             host_config["attributes"] = attributes
 
         return host_config
+
+    def get_host_config_job_template_dict(self) -> dict[str, Any]:
+        """Build host configuration dictionary for job template."""
+        return self.get_host_config_job_template_dict_for_node(self.node)
 
     def set_host_config_param_visibility(self, *, visible: bool) -> None:
         params = self.get_param_names()

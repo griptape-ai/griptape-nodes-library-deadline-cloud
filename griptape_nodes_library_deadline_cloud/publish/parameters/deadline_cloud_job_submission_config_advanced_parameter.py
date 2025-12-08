@@ -167,7 +167,7 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
                 choices_value_lookup=queue_choices,
                 default=queue_default,
             )
-            new_queue_id = str(queue_choices.get(queue_default))
+            new_queue_id = queue_choices.get(queue_default)  # May be None for fallback
             self._update_storage_profile_id(farm_id=value, queue_id=new_queue_id)
             self.updating_queue_id_lock = False
         if parameter.name == "queue_id" and not self.updating_queue_id_lock:
@@ -188,7 +188,7 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
             "conda_packages",
         ]
 
-    def _update_storage_profile_id(self, farm_id: str, queue_id: str) -> None:
+    def _update_storage_profile_id(self, farm_id: str | None, queue_id: str | None) -> None:
         storage_profile_choices = self._get_storage_profile_choices_values_map(farm_id=farm_id, queue_id=queue_id)
         storage_profile_id_default = self._get_default_choice(
             storage_profile_choices, BaseDeadlineCloud._get_default_storage_profile_id()
@@ -215,9 +215,9 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
             else self._get_choices_values_map_fallback()
         )
 
-    def _get_queue_choices_values_map(self, farm_id: str) -> dict:
+    def _get_queue_choices_values_map(self, farm_id: str | None) -> dict:
         queues = []
-        if farm_id != "":
+        if farm_id is not None and farm_id != "":
             try:
                 queues = self.list_queues(farm_id=farm_id)
             except Exception:
@@ -229,9 +229,9 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
             else self._get_choices_values_map_fallback()
         )
 
-    def _get_storage_profile_choices_values_map(self, farm_id: str, queue_id: str) -> dict:
+    def _get_storage_profile_choices_values_map(self, farm_id: str | None, queue_id: str | None) -> dict:
         storage_profiles = []
-        if farm_id != "" and queue_id != "":
+        if farm_id is not None and farm_id != "" and queue_id is not None and queue_id != "":
             try:
                 storage_profiles = self.list_storage_profiles(farm_id=farm_id, queue_id=queue_id)
             except Exception:
