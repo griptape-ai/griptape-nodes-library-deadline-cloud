@@ -2,7 +2,19 @@
 
 This library provides Griptape Nodes for interacting with AWS Deadline Cloud APIs and services.
 
-**IMPORTANT:** To use these nodes, you will need AWS Credentials.
+**IMPORTANT:** To use these nodes, you will need AWS Credentials with access to submit Jobs to a Deadline Cloud Farm.
+
+## Prerequisites
+
+1. Ensure you have an AWS Deadline Cloud Farm available. Follow the [AWS documentation](https://docs.aws.amazon.com/deadline-cloud/latest/userguide/getting-started.html) to get started.
+1. Ensure you have AWS Credentials available to submit Jobs to the Farm.
+   1. This can be achieved by installing the [Deadline Cloud monitor](https://docs.aws.amazon.com/deadline-cloud/latest/userguide/submitter.html#install-deadline-cloud-monitor) and logging in.
+
+## Add your library to your installed Engine
+
+[![Add to Griptape Nodes](images/add_to_griptape_nodes.png)](https://nodes.griptape.ai/#library-management?git=https://github.com/griptape-ai/griptape-nodes-library-deadline-cloud)
+
+## Configuration
 
 To configure your settings within the Griptape Nodes IDE:
 
@@ -15,10 +27,6 @@ To configure your settings within the Griptape Nodes IDE:
    1. Region name
    1. Profile name
    1. Default Storage profile ID (optional)
-
-## Add your library to your installed Engine
-
-[![Add to Griptape Nodes](images/add_to_griptape_nodes.png)](https://nodes.griptape.ai/#library-management?git=https://github.com/griptape-ai/griptape-nodes-library-deadline-cloud)
 
 ## Usage
 
