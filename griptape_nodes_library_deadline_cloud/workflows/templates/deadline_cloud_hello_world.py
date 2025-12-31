@@ -4,8 +4,8 @@
 # [tool.griptape-nodes]
 # name = "deadline_cloud_hello_world"
 # schema_version = "0.14.0"
-# engine_version_created_with = "0.66.2""
-# node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.2""]]
+# engine_version_created_with = "0.66.2"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.3"]]
 # node_types_used = [["Griptape Nodes Library", "AddTextToImage"], ["Griptape Nodes Library", "DisplayImage"], ["Griptape Nodes Library", "DisplayText"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "StandardSubflowNodeGroup"], ["Griptape Nodes Library", "TextInput"]]
 # is_griptape_provided = true
 # is_template = true
