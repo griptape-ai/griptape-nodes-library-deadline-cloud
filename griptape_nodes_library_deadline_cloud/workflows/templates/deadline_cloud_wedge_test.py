@@ -5,7 +5,7 @@
 # name = "deadline_cloud_wedge_test"
 # schema_version = "0.14.0"
 # engine_version_created_with = "0.66.2"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.2"]]
+# node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.3"]]
 # node_types_used = [["AWS Deadline Cloud Library", "DeadlineCloudMultiTaskGroup"], ["Griptape Nodes Library", "Agent"], ["Griptape Nodes Library", "CreateTextList"], ["Griptape Nodes Library", "DisplayImageGrid"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "SeedreamImageGeneration"]]
 # is_griptape_provided = true
 # is_template = true

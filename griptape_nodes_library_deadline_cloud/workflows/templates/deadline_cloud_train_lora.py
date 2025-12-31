@@ -5,7 +5,7 @@
 # name = "deadline_cloud_train_lora"
 # schema_version = "0.14.0"
 # engine_version_created_with = "0.66.2"
-# node_libraries_referenced = [["AWS Deadline Cloud Library", "0.66.2"], ["Griptape Nodes Lora Training Library", "0.62.0"], ["Griptape Nodes Library", "0.55.0"]]
+# node_libraries_referenced = [["AWS Deadline Cloud Library", "0.66.3"], ["Griptape Nodes Lora Training Library", "0.62.0"], ["Griptape Nodes Library", "0.55.0"]]
 # node_types_used = [["Griptape Nodes Library", "EndFlow"], ["Griptape Nodes Library", "EngineNode"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "PathJoin"], ["Griptape Nodes Library", "StandardSubflowNodeGroup"], ["Griptape Nodes Library", "StartFlow"], ["Griptape Nodes Lora Training Library", "DownloadDatasetNode"], ["Griptape Nodes Lora Training Library", "GenerateDatasetNode"], ["Griptape Nodes Lora Training Library", "TrainLoraNode"]]
 # is_griptape_provided = true
 # is_template = true
