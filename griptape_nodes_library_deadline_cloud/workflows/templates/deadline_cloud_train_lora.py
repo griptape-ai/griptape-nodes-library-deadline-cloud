@@ -3,6 +3,7 @@
 #
 # [tool.griptape-nodes]
 # name = "deadline_cloud_train_lora"
+# description = "An example demonstrating how a NodeGroup can be used to send a LoRA training subflow up to AWS Deadline Cloud within a running workflow."
 # schema_version = "0.14.0"
 # engine_version_created_with = "0.66.2"
 # node_libraries_referenced = [["AWS Deadline Cloud Library", "0.66.3"], ["Griptape Nodes Lora Training Library", "0.62.0"], ["Griptape Nodes Library", "0.55.0"]]

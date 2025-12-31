@@ -3,6 +3,7 @@
 #
 # [tool.griptape-nodes]
 # name = "deadline_cloud_wedge_test"
+# description = "An example demonstrating how a wedge test workflow can be triggered with parallel executions running as Jobs on AWS Deadline Cloud."
 # schema_version = "0.14.0"
 # engine_version_created_with = "0.66.2"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.3"]]
