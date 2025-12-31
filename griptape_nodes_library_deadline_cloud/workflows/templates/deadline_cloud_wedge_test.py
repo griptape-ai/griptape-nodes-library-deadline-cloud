@@ -3,19 +3,19 @@
 #
 # [tool.griptape-nodes]
 # name = "deadline_cloud_wedge_test"
-# description = "An example demonstrating how a wedge test workflow can be triggered with parallel executions running as Jobs on AWS Deadline Cloud."
 # schema_version = "0.14.0"
-# engine_version_created_with = "0.64.1"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.52.2"], ["AWS Deadline Cloud Library", "0.65.1"]]
+# engine_version_created_with = "0.66.2"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.55.0"], ["AWS Deadline Cloud Library", "0.66.2"]]
 # node_types_used = [["AWS Deadline Cloud Library", "DeadlineCloudMultiTaskGroup"], ["Griptape Nodes Library", "Agent"], ["Griptape Nodes Library", "CreateTextList"], ["Griptape Nodes Library", "DisplayImageGrid"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "SeedreamImageGeneration"]]
 # is_griptape_provided = true
 # is_template = true
-# creation_date = 2025-12-06T22:34:05.754692Z
-# last_modified_date = 2025-12-06T22:44:38.802331Z
+# creation_date = 2025-12-31T19:36:08.410350Z
+# last_modified_date = 2025-12-31T19:36:08.659191Z
 #
 # ///
 
 import pickle
+from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape_nodes.node_library.library_registry import IconVariant, NodeDeprecationMetadata, NodeMetadata
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest
@@ -44,101 +44,98 @@ if not context_manager.has_current_workflow():
    would be difficult to serialize.
 """
 top_level_unique_values_dict = {
-    "f87735ae-2a17-4f20-a509-8e45bdf37463": pickle.loads(
-        b"\x80\x04\x95\xb6\x01\x00\x00\x00\x00\x00\x00X\xaf\x01\x00\x00# Overview\n\nExecuting this workflow will result in the below Deadline Cloud Multi Task Group being published to AWS Deadline Cloud, and submitting 1 job with 3 parallel tasks to generate images for all 3 of the input subjects.\n\nThe Deadline Cloud Multi Task Group is an implementation of a Subflow Node Group. It is used to iterate over the input list, creating a task to run the Group body for each input, and collect the results.\x94."
+    "191c2c93-16af-4775-8d24-3ba10465028b": pickle.loads(
+        b"\x80\x04\x95\xe7\x01\x00\x00\x00\x00\x00\x00X\xe0\x01\x00\x00# Overview\n\nExecuting this workflow will result in the below Deadline Cloud Multi Task Group being published to AWS Deadline Cloud, and submitting 1 job with 3 parallel tasks to generate images for all 3 of the input subjects.\n\nThe Deadline Cloud Multi Task Group is an implementation of a Subflow Node Group. It is used to iterate over the input list, creating a task to run the Group body for each input, and collect the results.\n\nClick 'Run Workflow' to kick off the execution.\x94."
     ),
-    "ca182d5a-a447-4fd5-8042-eb1134b00743": pickle.loads(
+    "01f74ed5-692f-4b67-8088-a00d09a1c9c1": pickle.loads(
         b"\x80\x04\x95!\x00\x00\x00\x00\x00\x00\x00]\x94(\x8c\x08Capybara\x94\x8c\x07Giraffe\x94\x8c\x04Lion\x94e."
     ),
-    "4e341549-e43c-4093-9483-b55534eecaae": pickle.loads(
+    "c4511fea-ce0e-4134-958a-e42fc7437beb": pickle.loads(
         b"\x80\x04\x95\x0c\x00\x00\x00\x00\x00\x00\x00\x8c\x08Capybara\x94."
     ),
-    "b951e35d-872e-47b0-9846-2473e4f7cf1a": pickle.loads(
+    "754a09d5-7e1a-4316-b6e9-abdbec93a19d": pickle.loads(
         b"\x80\x04\x95\x0b\x00\x00\x00\x00\x00\x00\x00\x8c\x07Giraffe\x94."
     ),
-    "9c7009e7-5979-4048-bf45-81aed6fb27eb": pickle.loads(
+    "c484f041-778d-4a14-ac2e-43ffdf97441c": pickle.loads(
         b"\x80\x04\x95\x08\x00\x00\x00\x00\x00\x00\x00\x8c\x04Lion\x94."
     ),
-    "fc61dea4-0ade-4b84-9068-2d0f24f646d7": pickle.loads(
+    "ccdc067e-fe0c-4256-9e98-d56282ebd512": pickle.loads(
         b"\x80\x04\x95!\x00\x00\x00\x00\x00\x00\x00]\x94(\x8c\x08Capybara\x94\x8c\x07Giraffe\x94\x8c\x04Lion\x94e."
     ),
-    "923a9956-4213-4b2e-b088-503450433947": pickle.loads(
+    "1a7c93fb-6c9b-45fe-a297-388c4b9762ec": pickle.loads(
         b"\x80\x04\x95\x08\x00\x00\x00\x00\x00\x00\x00\x8c\x04grid\x94."
     ),
-    "72de1831-72ea-47ff-9468-64325be8698b": pickle.loads(
+    "7f11c6e4-e28f-4a11-a7bb-8c2fb225fecf": pickle.loads(
         b"\x80\x04\x95\x08\x00\x00\x00\x00\x00\x00\x00\x8c\x04left\x94."
     ),
-    "2e5a0dbd-1215-48c6-927d-d2030c0cda41": pickle.loads(b"\x80\x04K\x03."),
-    "e7d7984c-cf3b-45a8-b152-0813b7e73502": pickle.loads(b"\x80\x04K\n."),
-    "020ff7ba-e981-42ed-b76b-f3a9189df5ef": pickle.loads(b"\x80\x04K\x08."),
-    "d37e610a-76df-4364-af0d-23d8eee3af58": pickle.loads(b"\x80\x04\x88."),
-    "62f9e599-15af-4b42-9691-0cf17a76e92c": pickle.loads(b"\x80\x04\x89."),
-    "f1d8b187-efc0-4852-b0d5-7f7310843733": pickle.loads(
-        b"\x80\x04\x95\r\x00\x00\x00\x00\x00\x00\x00\x8c\t#000000ff\x94."
+    "c85e10f2-2b29-40b5-9048-e244b3bb3f14": pickle.loads(b"\x80\x04K\x03."),
+    "46367adf-a58a-4aa9-a000-37e7df536672": pickle.loads(b"\x80\x04K\n."),
+    "4aba6118-4a31-4826-a73b-f44005594bc7": pickle.loads(b"\x80\x04K\x08."),
+    "6cdeb7d5-004a-44d0-af72-add3c028df0f": pickle.loads(b"\x80\x04\x88."),
+    "c4c4ae90-8152-491e-ab29-b71de163b4d5": pickle.loads(b"\x80\x04\x89."),
+    "106aded4-a2c9-4a87-9d26-f1369305bdd5": pickle.loads(
+        b"\x80\x04\x95\x0b\x00\x00\x00\x00\x00\x00\x00\x8c\x07#000000\x94."
     ),
-    "59a229c1-89ca-4d53-bd1f-9283586c20c1": pickle.loads(
+    "ef984dcd-d810-40f3-a8f9-1ea22e784962": pickle.loads(
         b"\x80\x04\x95\n\x00\x00\x00\x00\x00\x00\x00\x8c\x06custom\x94."
     ),
-    "55c6950f-2c21-43eb-b271-1237ee1bfcf3": pickle.loads(
+    "b1310837-09a7-4258-814b-31ac2d957a38": pickle.loads(
         b"\x80\x04\x95\x15\x00\x00\x00\x00\x00\x00\x00\x8c\x111080p (1920x1080)\x94."
     ),
-    "c31ea910-75a2-47b6-a0a4-9b9fb6ef0705": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00M\xb0\x04."),
-    "c0ddbbe4-8bc9-433d-aa08-7e99b0186730": pickle.loads(
+    "8bd0a338-b7b2-414c-bfbd-53c3ccd88d33": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00M\xb0\x04."),
+    "7ab23d00-696f-49ac-a33a-8942e989ede8": pickle.loads(
         b"\x80\x04\x95\x07\x00\x00\x00\x00\x00\x00\x00\x8c\x03png\x94."
     ),
-    "697c2137-49be-479b-901d-eb156d54eff6": pickle.loads(
+    "51285cec-f932-4d1c-ad5c-ef2556659495": pickle.loads(
+        b"\x80\x04\x95\xc3\x01\x00\x00\x00\x00\x00\x00\x8c%griptape.artifacts.image_url_artifact\x94\x8c\x10ImageUrlArtifact\x94\x93\x94)\x81\x94}\x94(\x8c\x04type\x94h\x01\x8c\x0bmodule_name\x94h\x00\x8c\x02id\x94\x8c fce65e450d8344ca997b15a9fe44f1b0\x94\x8c\treference\x94N\x8c\x04meta\x94}\x94\x8c\x04name\x94h\x08\x8c\x16encoding_error_handler\x94\x8c\x06strict\x94\x8c\x08encoding\x94\x8c\x05utf-8\x94\x8c\x05value\x94\x8c\xddhttp://localhost:8124/workspace/libraries/griptape-nodes-library-deadline-cloud/griptape_nodes_library_deadline_cloud/workflows/templates/staticfiles/deadline_cloud_wedge_test_DisplayImageGrid_placeholder.png?t=1767209702\x94ub."
+    ),
+    "89f439c0-9eaa-4895-8d71-c8ddf196f31e": pickle.loads(
         b"\x80\x04\x95\x1e\x00\x00\x00\x00\x00\x00\x00\x8c\x1aAWS Deadline Cloud Library\x94."
     ),
-    "d5e480de-a2a2-4861-9f4c-6e7cce3f8409": pickle.loads(
+    "52a0e100-c349-47b4-a7a1-d7a4c2200372": pickle.loads(
         b"\x80\x04\x95\x0e\x00\x00\x00\x00\x00\x00\x00\x8c\nWedge Test\x94."
     ),
-    "3bd3791c-3138-467f-a13c-e9935110acba": pickle.loads(
+    "5e77136a-d81e-4725-a665-9494effd2b87": pickle.loads(
         b"\x80\x04\x95$\x00\x00\x00\x00\x00\x00\x00\x8c Multi task Job on Deadline Cloud\x94."
     ),
-    "64e63b24-8182-46a6-9e69-b119cb41ca1d": pickle.loads(b"\x80\x04]\x94."),
-    "bc6316bf-b4bf-4677-bcad-23947e90ce2a": pickle.loads(b"\x80\x04]\x94."),
-    "6924492b-1328-498a-86d6-d4fcaf7c7538": pickle.loads(b"\x80\x04K2."),
-    "473dd81a-0bca-4694-8fd4-8d73593c55e1": pickle.loads(
+    "3bda9f4e-c485-442f-b14d-f21d306ac2f5": pickle.loads(b"\x80\x04]\x94."),
+    "e99a54da-23ab-4c95-9da5-772b578fee3a": pickle.loads(b"\x80\x04]\x94."),
+    "58c7f348-9d4a-43b6-bbf8-d7b0b7d698b2": pickle.loads(b"\x80\x04K2."),
+    "54dba5b3-700f-42bf-9b14-6c45e5a99d04": pickle.loads(
         b"\x80\x04\x95\t\x00\x00\x00\x00\x00\x00\x00\x8c\x05READY\x94."
     ),
-    "f0ae232b-03b1-425b-b8fa-975acbe4cc39": pickle.loads(b"\x80\x04K\x00."),
-    "2278c50e-1852-48c8-b56b-844134059181": pickle.loads(
-        b"\x80\x04\x95)\x00\x00\x00\x00\x00\x00\x00\x8c%farm-7bbde5411d444d039f12b30e007658fd\x94."
-    ),
-    "d3b0b7a7-337c-4a7e-b27f-a521e73d9d9d": pickle.loads(
-        b"\x80\x04\x95*\x00\x00\x00\x00\x00\x00\x00\x8c&queue-1c93aa55070f44279d03ed7a13918099\x94."
-    ),
-    "089bd74b-52e8-480c-b2ee-b47ec277de3a": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00\x8c\x00\x94."),
-    "08e01a71-74ad-471d-ab47-5e3531e0c36f": pickle.loads(
+    "a3c27e7b-6c10-49c8-bcc7-c0a92479bda2": pickle.loads(b"\x80\x04K\x00."),
+    "fb67b4ed-a502-4b29-8081-cbff0537b0e2": pickle.loads(
         b"\x80\x04\x95\x0f\x00\x00\x00\x00\x00\x00\x00\x8c\x0bconda-forge\x94."
     ),
-    "b7ddd111-7076-414a-8726-7296084a5334": pickle.loads(
+    "59a94ea3-185d-4185-9bb6-79482a1d900f": pickle.loads(
         b"\x80\x04\x95\x0f\x00\x00\x00\x00\x00\x00\x00\x8c\x0bpython=3.12\x94."
     ),
-    "eed45383-89c5-40a6-9b8b-2d3732522ebc": pickle.loads(
+    "2c5bcbf6-e216-409e-b365-67973843b498": pickle.loads(
         b"\x80\x04\x95\n\x00\x00\x00\x00\x00\x00\x00\x8c\x06gpt-4o\x94."
     ),
-    "ea0900e8-389f-40eb-945d-d558c96655ae": pickle.loads(
+    "7ad17f66-eec7-47e1-a367-131ccc0aabe9": pickle.loads(
         b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c0Create a detailed image generation prompt for a:\x94."
     ),
-    "a5748387-6ea2-412b-bd73-f7477fc14fdd": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00\x8c\x00\x94."),
-    "37285d0e-de56-4d33-9a2a-a64be94ac368": pickle.loads(b"\x80\x04]\x94."),
-    "d981c1d9-f49f-4753-9f64-1efbbe3e1481": pickle.loads(b"\x80\x04]\x94."),
-    "706a547d-6bee-436a-a44f-f128433e8eaf": pickle.loads(b"\x80\x04\x89."),
-    "4af9344c-45cd-4a14-974b-f06b9d853e57": pickle.loads(
+    "70436721-40f7-4b3c-a882-a703fad5f70b": pickle.loads(b"\x80\x04\x95\x04\x00\x00\x00\x00\x00\x00\x00\x8c\x00\x94."),
+    "fe3137b5-742b-4fd3-b5f8-aaf1d1f9793c": pickle.loads(b"\x80\x04]\x94."),
+    "2e974a55-2bdd-4756-925f-3ab600ab188d": pickle.loads(b"\x80\x04]\x94."),
+    "f0f4b64d-3a1d-431a-9835-0a905bf437c4": pickle.loads(b"\x80\x04\x89."),
+    "e2e8c898-65ae-4665-b454-e9b854665982": pickle.loads(
         b"\x80\x04\x95\x08\x00\x00\x00\x00\x00\x00\x00\x8c\x04\\n\\n\x94."
     ),
-    "3f18a94a-ace6-4941-834b-58c06396c0f7": pickle.loads(
+    "0215b164-6a8d-443b-a066-e5bd7cfa86da": pickle.loads(
         b"\x80\x04\x95\x10\x00\x00\x00\x00\x00\x00\x00\x8c\x0cseedream-4.5\x94."
     ),
-    "6f151601-41b7-41ae-b8a9-e4544ef6ea94": pickle.loads(b"\x80\x04]\x94."),
-    "f341637a-9399-4c2b-8592-47b56f371f49": pickle.loads(
+    "2bd3049f-84fe-4a9a-810b-7803f22275f7": pickle.loads(b"\x80\x04]\x94."),
+    "ce0d0075-832d-420e-8525-d7c4fc193e8a": pickle.loads(
         b"\x80\x04\x95\x06\x00\x00\x00\x00\x00\x00\x00\x8c\x022K\x94."
     ),
-    "fcd68c36-3829-4e19-834c-95482b860283": pickle.loads(
+    "91bd1e20-dfcd-44c4-a82a-8fae1ba78a93": pickle.loads(
         b"\x80\x04\x95\x06\x00\x00\x00\x00\x00\x00\x00J\xff\xff\xff\xff."
     ),
-    "e6aeee4c-8df8-4893-8e57-bc53e5673cdd": pickle.loads(
+    "dbe9a2ba-3a67-46c9-8e4e-eefe39a9f59e": pickle.loads(b"\x80\x04K\n."),
+    "0e3eb9b7-3130-4abe-8521-0c1f25cefe12": pickle.loads(
         b"\x80\x04\x95\n\x00\x00\x00\x00\x00\x00\x00G@\x04\x00\x00\x00\x00\x00\x00."
     ),
 }
@@ -360,10 +357,17 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 metadata={
                     "position": {"x": 1642.2876360903058, "y": 98.5},
                     "tempId": "placing-1765060255639-ada8z",
-                    "library_node_metadata": {
-                        "category": "image",
-                        "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
-                    },
+                    "library_node_metadata": NodeMetadata(
+                        category="image",
+                        description="Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
+                        display_name="Seedream Image Generation",
+                        tags=None,
+                        icon="Sparkles",
+                        color=None,
+                        group="create",
+                        deprecation=None,
+                        is_node_group=None,
+                    ),
                     "library": "Griptape Nodes Library",
                     "node_type": "SeedreamImageGeneration",
                     "showaddparameter": False,
@@ -396,7 +400,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="model",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["eed45383-89c5-40a6-9b8b-2d3732522ebc"],
+                    value=top_level_unique_values_dict["2c5bcbf6-e216-409e-b365-67973843b498"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -405,7 +409,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="prompt",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["ea0900e8-389f-40eb-945d-d558c96655ae"],
+                    value=top_level_unique_values_dict["7ad17f66-eec7-47e1-a367-131ccc0aabe9"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -414,7 +418,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="additional_context",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["a5748387-6ea2-412b-bd73-f7477fc14fdd"],
+                    value=top_level_unique_values_dict["70436721-40f7-4b3c-a882-a703fad5f70b"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -423,7 +427,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="tools",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["37285d0e-de56-4d33-9a2a-a64be94ac368"],
+                    value=top_level_unique_values_dict["fe3137b5-742b-4fd3-b5f8-aaf1d1f9793c"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -432,7 +436,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="rulesets",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["d981c1d9-f49f-4753-9f64-1efbbe3e1481"],
+                    value=top_level_unique_values_dict["2e974a55-2bdd-4756-925f-3ab600ab188d"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -441,7 +445,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="output",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["a5748387-6ea2-412b-bd73-f7477fc14fdd"],
+                    value=top_level_unique_values_dict["70436721-40f7-4b3c-a882-a703fad5f70b"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -450,7 +454,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="include_details",
                     node_name=node3_name,
-                    value=top_level_unique_values_dict["706a547d-6bee-436a-a44f-f128433e8eaf"],
+                    value=top_level_unique_values_dict["f0f4b64d-3a1d-431a-9835-0a905bf437c4"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -460,7 +464,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="input_1",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["ea0900e8-389f-40eb-945d-d558c96655ae"],
+                    value=top_level_unique_values_dict["7ad17f66-eec7-47e1-a367-131ccc0aabe9"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -469,7 +473,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="input_2",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["a5748387-6ea2-412b-bd73-f7477fc14fdd"],
+                    value=top_level_unique_values_dict["70436721-40f7-4b3c-a882-a703fad5f70b"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -478,7 +482,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="merge_string",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["4af9344c-45cd-4a14-974b-f06b9d853e57"],
+                    value=top_level_unique_values_dict["e2e8c898-65ae-4665-b454-e9b854665982"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -487,7 +491,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="whitespace",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["706a547d-6bee-436a-a44f-f128433e8eaf"],
+                    value=top_level_unique_values_dict["f0f4b64d-3a1d-431a-9835-0a905bf437c4"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -496,7 +500,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="output",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["ea0900e8-389f-40eb-945d-d558c96655ae"],
+                    value=top_level_unique_values_dict["7ad17f66-eec7-47e1-a367-131ccc0aabe9"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -505,7 +509,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="output",
                     node_name=node4_name,
-                    value=top_level_unique_values_dict["ea0900e8-389f-40eb-945d-d558c96655ae"],
+                    value=top_level_unique_values_dict["7ad17f66-eec7-47e1-a367-131ccc0aabe9"],
                     initial_setup=True,
                     is_output=True,
                 )
@@ -515,7 +519,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="model",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["3f18a94a-ace6-4941-834b-58c06396c0f7"],
+                    value=top_level_unique_values_dict["0215b164-6a8d-443b-a066-e5bd7cfa86da"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -524,7 +528,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="images",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["6f151601-41b7-41ae-b8a9-e4544ef6ea94"],
+                    value=top_level_unique_values_dict["2bd3049f-84fe-4a9a-810b-7803f22275f7"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -533,7 +537,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="size",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["f341637a-9399-4c2b-8592-47b56f371f49"],
+                    value=top_level_unique_values_dict["ce0d0075-832d-420e-8525-d7c4fc193e8a"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -542,7 +546,16 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="seed",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["fcd68c36-3829-4e19-834c-95482b860283"],
+                    value=top_level_unique_values_dict["91bd1e20-dfcd-44c4-a82a-8fae1ba78a93"],
+                    initial_setup=True,
+                    is_output=False,
+                )
+            )
+            GriptapeNodes.handle_request(
+                SetParameterValueRequest(
+                    parameter_name="max_images",
+                    node_name=node5_name,
+                    value=top_level_unique_values_dict["dbe9a2ba-3a67-46c9-8e4e-eefe39a9f59e"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -551,7 +564,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="guidance_scale",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["e6aeee4c-8df8-4893-8e57-bc53e5673cdd"],
+                    value=top_level_unique_values_dict["0e3eb9b7-3130-4abe-8521-0c1f25cefe12"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -560,7 +573,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 SetParameterValueRequest(
                     parameter_name="was_successful",
                     node_name=node5_name,
-                    value=top_level_unique_values_dict["706a547d-6bee-436a-a44f-f128433e8eaf"],
+                    value=top_level_unique_values_dict["f0f4b64d-3a1d-431a-9835-0a905bf437c4"],
                     initial_setup=True,
                     is_output=False,
                 )
@@ -624,6 +637,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                 "right_parameters": ["new_item_to_add", "results"],
                 "subflow_name": "Deadline Cloud Multi Task Group_subflow",
                 "expanded_dimensions": {"width": 2530, "height": 1054},
+                "executable": False,
             },
             node_names_to_add=[node3_name, node4_name, node5_name],
         )
@@ -705,7 +719,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="note",
                 node_name=node0_name,
-                value=top_level_unique_values_dict["f87735ae-2a17-4f20-a509-8e45bdf37463"],
+                value=top_level_unique_values_dict["191c2c93-16af-4775-8d24-3ba10465028b"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -715,7 +729,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="items",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["ca182d5a-a447-4fd5-8042-eb1134b00743"],
+                value=top_level_unique_values_dict["01f74ed5-692f-4b67-8088-a00d09a1c9c1"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -724,7 +738,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="items_ParameterListUniqueParamID_f21334b88f9248b5928497c8de05e92c",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["4e341549-e43c-4093-9483-b55534eecaae"],
+                value=top_level_unique_values_dict["c4511fea-ce0e-4134-958a-e42fc7437beb"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -733,7 +747,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="items_ParameterListUniqueParamID_3ca5b9e3ba9a40bc879ee4df68c7929d",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["b951e35d-872e-47b0-9846-2473e4f7cf1a"],
+                value=top_level_unique_values_dict["754a09d5-7e1a-4316-b6e9-abdbec93a19d"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -742,7 +756,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="items_ParameterListUniqueParamID_e525d5d0e55240498d370869f6cd03df",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["9c7009e7-5979-4048-bf45-81aed6fb27eb"],
+                value=top_level_unique_values_dict["c484f041-778d-4a14-ac2e-43ffdf97441c"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -751,7 +765,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["fc61dea4-0ade-4b84-9068-2d0f24f646d7"],
+                value=top_level_unique_values_dict["ccdc067e-fe0c-4256-9e98-d56282ebd512"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -760,7 +774,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output",
                 node_name=node1_name,
-                value=top_level_unique_values_dict["fc61dea4-0ade-4b84-9068-2d0f24f646d7"],
+                value=top_level_unique_values_dict["ccdc067e-fe0c-4256-9e98-d56282ebd512"],
                 initial_setup=True,
                 is_output=True,
             )
@@ -770,7 +784,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="layout_style",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["923a9956-4213-4b2e-b088-503450433947"],
+                value=top_level_unique_values_dict["1a7c93fb-6c9b-45fe-a297-388c4b9762ec"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -779,7 +793,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="grid_justification",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["72de1831-72ea-47ff-9468-64325be8698b"],
+                value=top_level_unique_values_dict["7f11c6e4-e28f-4a11-a7bb-8c2fb225fecf"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -788,7 +802,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="columns",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["2e5a0dbd-1215-48c6-927d-d2030c0cda41"],
+                value=top_level_unique_values_dict["c85e10f2-2b29-40b5-9048-e244b3bb3f14"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -797,7 +811,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="spacing",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["e7d7984c-cf3b-45a8-b152-0813b7e73502"],
+                value=top_level_unique_values_dict["46367adf-a58a-4aa9-a000-37e7df536672"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -806,7 +820,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="border_radius",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["020ff7ba-e981-42ed-b76b-f3a9189df5ef"],
+                value=top_level_unique_values_dict["4aba6118-4a31-4826-a73b-f44005594bc7"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -815,7 +829,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="crop_to_fit",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["d37e610a-76df-4364-af0d-23d8eee3af58"],
+                value=top_level_unique_values_dict["6cdeb7d5-004a-44d0-af72-add3c028df0f"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -824,7 +838,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="transparent_bg",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["62f9e599-15af-4b42-9691-0cf17a76e92c"],
+                value=top_level_unique_values_dict["c4c4ae90-8152-491e-ab29-b71de163b4d5"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -833,7 +847,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="background_color",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["f1d8b187-efc0-4852-b0d5-7f7310843733"],
+                value=top_level_unique_values_dict["106aded4-a2c9-4a87-9d26-f1369305bdd5"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -842,7 +856,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output_image_size",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["59a229c1-89ca-4d53-bd1f-9283586c20c1"],
+                value=top_level_unique_values_dict["ef984dcd-d810-40f3-a8f9-1ea22e784962"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -851,7 +865,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output_preset",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["55c6950f-2c21-43eb-b271-1237ee1bfcf3"],
+                value=top_level_unique_values_dict["b1310837-09a7-4258-814b-31ac2d957a38"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -860,7 +874,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output_image_width",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["c31ea910-75a2-47b6-a0a4-9b9fb6ef0705"],
+                value=top_level_unique_values_dict["8bd0a338-b7b2-414c-bfbd-53c3ccd88d33"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -869,9 +883,18 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="output_format",
                 node_name=node2_name,
-                value=top_level_unique_values_dict["c0ddbbe4-8bc9-433d-aa08-7e99b0186730"],
+                value=top_level_unique_values_dict["7ab23d00-696f-49ac-a33a-8942e989ede8"],
                 initial_setup=True,
                 is_output=False,
+            )
+        )
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name="output",
+                node_name=node2_name,
+                value=top_level_unique_values_dict["51285cec-f932-4d1c-ad5c-ef2556659495"],
+                initial_setup=True,
+                is_output=True,
             )
         )
     with GriptapeNodes.ContextManager().node(node6_name):
@@ -879,7 +902,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="execution_environment",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["697c2137-49be-479b-901d-eb156d54eff6"],
+                value=top_level_unique_values_dict["89f439c0-9eaa-4895-8d71-c8ddf196f31e"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -888,7 +911,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_job_name",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["d5e480de-a2a2-4861-9f4c-6e7cce3f8409"],
+                value=top_level_unique_values_dict["52a0e100-c349-47b4-a7a1-d7a4c2200372"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -897,7 +920,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_job_description",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["3bd3791c-3138-467f-a13c-e9935110acba"],
+                value=top_level_unique_values_dict["5e77136a-d81e-4725-a665-9494effd2b87"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -906,7 +929,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_attachment_input_paths",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["64e63b24-8182-46a6-9e69-b119cb41ca1d"],
+                value=top_level_unique_values_dict["3bda9f4e-c485-442f-b14d-f21d306ac2f5"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -915,7 +938,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_attachment_output_paths",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["bc6316bf-b4bf-4677-bcad-23947e90ce2a"],
+                value=top_level_unique_values_dict["e99a54da-23ab-4c95-9da5-772b578fee3a"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -924,7 +947,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_priority",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["6924492b-1328-498a-86d6-d4fcaf7c7538"],
+                value=top_level_unique_values_dict["58c7f348-9d4a-43b6-bbf8-d7b0b7d698b2"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -933,7 +956,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_initial_state",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["473dd81a-0bca-4694-8fd4-8d73593c55e1"],
+                value=top_level_unique_values_dict["54dba5b3-700f-42bf-9b14-6c45e5a99d04"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -942,7 +965,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_max_failed_tasks",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["f0ae232b-03b1-425b-b8fa-975acbe4cc39"],
+                value=top_level_unique_values_dict["a3c27e7b-6c10-49c8-bcc7-c0a92479bda2"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -951,34 +974,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_max_task_retries",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["f0ae232b-03b1-425b-b8fa-975acbe4cc39"],
-                initial_setup=True,
-                is_output=False,
-            )
-        )
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
-                parameter_name="deadlinecloudstartflow_farm_id",
-                node_name=node6_name,
-                value=top_level_unique_values_dict["2278c50e-1852-48c8-b56b-844134059181"],
-                initial_setup=True,
-                is_output=False,
-            )
-        )
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
-                parameter_name="deadlinecloudstartflow_queue_id",
-                node_name=node6_name,
-                value=top_level_unique_values_dict["d3b0b7a7-337c-4a7e-b27f-a521e73d9d9d"],
-                initial_setup=True,
-                is_output=False,
-            )
-        )
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
-                parameter_name="deadlinecloudstartflow_storage_profile_id",
-                node_name=node6_name,
-                value=top_level_unique_values_dict["089bd74b-52e8-480c-b2ee-b47ec277de3a"],
+                value=top_level_unique_values_dict["a3c27e7b-6c10-49c8-bcc7-c0a92479bda2"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -987,7 +983,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_conda_channels",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["08e01a71-74ad-471d-ab47-5e3531e0c36f"],
+                value=top_level_unique_values_dict["fb67b4ed-a502-4b29-8081-cbff0537b0e2"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -996,7 +992,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_conda_packages",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["b7ddd111-7076-414a-8726-7296084a5334"],
+                value=top_level_unique_values_dict["59a94ea3-185d-4185-9bb6-79482a1d900f"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -1005,7 +1001,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="deadlinecloudstartflow_run_on_all_worker_hosts",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["d37e610a-76df-4364-af0d-23d8eee3af58"],
+                value=top_level_unique_values_dict["6cdeb7d5-004a-44d0-af72-add3c028df0f"],
                 initial_setup=True,
                 is_output=False,
             )
@@ -1014,7 +1010,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             SetParameterValueRequest(
                 parameter_name="items",
                 node_name=node6_name,
-                value=top_level_unique_values_dict["fc61dea4-0ade-4b84-9068-2d0f24f646d7"],
+                value=top_level_unique_values_dict["ccdc067e-fe0c-4256-9e98-d56282ebd512"],
                 initial_setup=True,
                 is_output=False,
             )
