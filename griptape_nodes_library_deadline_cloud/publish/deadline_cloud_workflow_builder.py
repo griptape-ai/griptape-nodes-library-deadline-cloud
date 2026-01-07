@@ -45,6 +45,9 @@ class DeadlineCloudWorkflowBuilderInput:
 class DeadlineCloudWorkflowBuilder:
     """Builder class for generating executor workflows using simple script generation."""
 
+    # Fields to exclude from parameter configs when creating AddParameterToNodeRequest
+    EXCLUDED_PARAM_CONFIG_FIELDS = ("settable", "private")
+
     def __init__(
         self,
         workflow_builder_input: DeadlineCloudWorkflowBuilderInput,
@@ -223,7 +226,8 @@ def main():
                 # Create a copy and remap 'name' to 'parameter_name'
                 param_config = dict(param)
                 param_name = param_config.pop("name")
-                param_config.pop("settable", None)  # Remove 'settable' if it exists
+                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
+                    param_config.pop(excluded_field, None)
                 param_config["parameter_name"] = param_name
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     # Do not double add job submission parameters
@@ -252,7 +256,8 @@ def main():
                 param_config = dict(param)
                 param_name = param_config.pop("name")
                 param_config["parameter_name"] = param_name
-                param_config.pop("settable", None)  # Remove 'settable' if it exists
+                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
+                    param_config.pop(excluded_field, None)
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
@@ -269,7 +274,8 @@ def main():
                 param_config = dict(param)
                 param_name = param_config.pop("name")
                 param_config["parameter_name"] = param_name
-                param_config.pop("settable", None)  # Remove 'settable' if it exists
+                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
+                    param_config.pop(excluded_field, None)
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
@@ -296,7 +302,8 @@ def main():
                 param_config = dict(param)
                 param_name = param_config.pop("name")
                 param_config["parameter_name"] = param_name
-                param_config.pop("settable", None)  # Remove 'settable' if it exists
+                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
+                    param_config.pop(excluded_field, None)
                 if param_name not in DeadlineCloudEndFlow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
