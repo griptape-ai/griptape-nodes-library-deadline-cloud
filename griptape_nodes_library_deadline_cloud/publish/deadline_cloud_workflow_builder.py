@@ -8,7 +8,7 @@ import logging
 import subprocess
 import sys
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsResultSuccess,
 )
+from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from publish import LIBRARY_NAME
 from publish.deadline_cloud_end_flow import DeadlineCloudEndFlow
@@ -45,9 +46,6 @@ class DeadlineCloudWorkflowBuilderInput:
 class DeadlineCloudWorkflowBuilder:
     """Builder class for generating executor workflows using simple script generation."""
 
-    # Fields to exclude from parameter configs when creating AddParameterToNodeRequest
-    EXCLUDED_PARAM_CONFIG_FIELDS = ("settable", "private")
-
     def __init__(
         self,
         workflow_builder_input: DeadlineCloudWorkflowBuilderInput,
@@ -58,6 +56,24 @@ class DeadlineCloudWorkflowBuilder:
             workflow_builder_input: Input configuration containing all necessary parameters.
         """
         self.workflow_builder_input = workflow_builder_input
+
+    @staticmethod
+    def _build_param_config(param: dict[str, Any]) -> dict[str, Any]:
+        """Build a parameter config dict with only fields supported by AddParameterToNodeRequest.
+
+        Args:
+            param: The parameter dict from workflow_shape, with 'name' key.
+
+        Returns:
+            A dict with 'name' remapped to 'parameter_name' and filtered to only
+            include fields supported by AddParameterToNodeRequest.
+        """
+        supported_fields = {f.name for f in fields(AddParameterToNodeRequest)}
+        param_config = {k: v for k, v in param.items() if k in supported_fields}
+        # Remap 'name' to 'parameter_name'
+        if "name" in param:
+            param_config["parameter_name"] = param["name"]
+        return param_config
 
     def generate_executor_workflow(
         self,
@@ -150,7 +166,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileRequest,
     RegisterLibraryFromRequirementSpecifierRequest,
 )
-from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest, SetParameterValueRequest
+from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterToNodeRequest,
+    SetParameterValueRequest,
+)
 from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
 from griptape_nodes.retained_mode.events.workflow_events import SaveWorkflowRequest
 
@@ -223,12 +242,8 @@ def main():
         else:
             # Add parameter configuration for StartNode
             for param in input_params:
-                # Create a copy and remap 'name' to 'parameter_name'
-                param_config = dict(param)
-                param_name = param_config.pop("name")
-                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
-                    param_config.pop(excluded_field, None)
-                param_config["parameter_name"] = param_name
+                param_config = self._build_param_config(param)
+                param_name = param["name"]
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     # Do not double add job submission parameters
                     script += f"""
@@ -252,12 +267,8 @@ def main():
         else:
             # Add input parameter configuration for DeadlineCloudPublishedWorkflow
             for param in input_params:
-                # Create a copy and remap 'name' to 'parameter_name'
-                param_config = dict(param)
-                param_name = param_config.pop("name")
-                param_config["parameter_name"] = param_name
-                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
-                    param_config.pop(excluded_field, None)
+                param_config = self._build_param_config(param)
+                param_name = param["name"]
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
@@ -270,12 +281,8 @@ def main():
 
             # Add output parameter configuration for DeadlineCloudPublishedWorkflow
             for param in output_params:
-                # Create a copy and remap 'name' to 'parameter_name'
-                param_config = dict(param)
-                param_name = param_config.pop("name")
-                param_config["parameter_name"] = param_name
-                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
-                    param_config.pop(excluded_field, None)
+                param_config = self._build_param_config(param)
+                param_name = param["name"]
                 if param_name not in DeadlineCloudPublishedWorkflow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
@@ -298,12 +305,8 @@ def main():
         else:
             # Add parameter configuration for EndNode
             for param in output_params:
-                # Create a copy and remap 'name' to 'parameter_name'
-                param_config = dict(param)
-                param_name = param_config.pop("name")
-                param_config["parameter_name"] = param_name
-                for excluded_field in DeadlineCloudWorkflowBuilder.EXCLUDED_PARAM_CONFIG_FIELDS:
-                    param_config.pop(excluded_field, None)
+                param_config = self._build_param_config(param)
+                param_name = param["name"]
                 if param_name not in DeadlineCloudEndFlow.get_default_node_parameter_names():
                     script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
