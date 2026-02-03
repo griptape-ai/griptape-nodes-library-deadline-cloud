@@ -68,7 +68,8 @@ class DeadlineCloudWorkflowExecutor(LocalWorkflowExecutor):
         This method:
         1. Loads the static file mappings from the assets directory
         2. Applies path substitutions for any node/parameter that needs remapping
-        3. Calls the parent implementation for normal StartNode input handling
+        3. Removes substituted parameters from flow_input to prevent parent from overwriting
+        4. Calls the parent implementation for normal StartNode input handling
         """
         # Load static file mappings
         static_file_mappings = self._load_static_file_mappings()
@@ -106,6 +107,14 @@ class DeadlineCloudWorkflowExecutor(LocalWorkflowExecutor):
                             node_name,
                             param_name,
                             result,
+                        )
+                    # Remove from flow_input to prevent parent from overwriting our substitution
+                    elif node_name in flow_input and param_name in flow_input[node_name]:
+                        del flow_input[node_name][param_name]
+                        logger.debug(
+                            "Removed %s.%s from flow_input to prevent overwrite",
+                            node_name,
+                            param_name,
                         )
 
         # Call parent implementation for normal StartNode input handling

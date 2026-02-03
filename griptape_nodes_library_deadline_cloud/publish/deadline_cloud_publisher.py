@@ -270,11 +270,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
         return models
 
-    def _gather_static_file_dependencies(self) -> dict[str, dict[str, set[str]]]:  # noqa: C901, PLR0912
+    def _gather_static_file_dependencies(  # noqa: C901, PLR0912
+        self,
+    ) -> dict[str, dict[str, tuple[str, set[str]]]]:
         """Gather static file dependencies from all nodes in the workflow.
 
-        Returns a dict mapping node_name -> parameter_name -> set of static file paths.
+        Returns a dict mapping:
+            node_name -> parameter_name -> (original_param_value, set of static file paths)
+
         The parameter_name is traced back to the source node/parameter if there's a connection.
+        The original_param_value is preserved so we can correctly remap paths at runtime.
         """
         nodes = self._get_all_nodes_for_workflow()
         flow_manager = GriptapeNodes.FlowManager()
@@ -294,8 +299,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         control_flow = flow_manager.get_flow_by_name(flow_name)
 
         # Collect static files and their associated parameters
-        # Structure: {node_name: {param_name: set of file paths}}
-        static_file_params: dict[str, dict[str, set[str]]] = {}
+        # Structure: {node_name: {param_name: (original_param_value, set of file paths)}}
+        static_file_params: dict[str, dict[str, tuple[str, set[str]]]] = {}
 
         for node in nodes:
             # Check if node has get_node_dependencies method
@@ -338,12 +343,23 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 # Trace back to source if there's an input connection
                 source_node_name, source_param_name = self._trace_parameter_to_source(control_flow, node, param)
 
+                # Get the source parameter's actual value (may differ from param_value if connected)
+                source_param_value_result = node_manager.on_get_parameter_value_request(
+                    GetParameterValueRequest(parameter_name=source_param_name, node_name=source_node_name)
+                )
+                if isinstance(source_param_value_result, GetParameterValueResultSuccess):
+                    source_param_value = str(source_param_value_result.value)
+                else:
+                    source_param_value = param_value
+
                 if source_node_name not in static_file_params:
                     static_file_params[source_node_name] = {}
-                if source_param_name not in static_file_params[source_node_name]:
-                    static_file_params[source_node_name][source_param_name] = set()
 
-                static_file_params[source_node_name][source_param_name].update(matching_files)
+                # Store both the original param value and the matching files
+                if source_param_name not in static_file_params[source_node_name]:
+                    static_file_params[source_node_name][source_param_name] = (source_param_value, set())
+
+                static_file_params[source_node_name][source_param_name][1].update(matching_files)
 
         return static_file_params
 
@@ -391,16 +407,18 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         return str(Path(*parts)) if parts else ""
 
     def _copy_static_files_to_assets(
-        self, static_file_params: dict[str, dict[str, set[str]]], assets_dir: Path
+        self, static_file_params: dict[str, dict[str, tuple[str, set[str]]]], assets_dir: Path
     ) -> dict[str, dict[str, str]]:
         """Copy static files to assets directory and return path mappings.
 
         Args:
-            static_file_params: Dict of node_name -> param_name -> set of file paths
+            static_file_params: Dict of node_name -> param_name -> (original_param_value, set of file paths)
             assets_dir: The assets directory to copy files into
 
         Returns:
             Dict of node_name -> param_name -> relative path for runtime substitution
+            The relative path corresponds to the original parameter value, preserving
+            whether it was a file or directory path.
         """
         static_files_dir = assets_dir / "static_files"
         static_files_dir.mkdir(parents=True, exist_ok=True)
@@ -408,69 +426,47 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         # Build mappings: node_name -> param_name -> new relative path
         mappings: dict[str, dict[str, str]] = {}
 
-        # Track which directories we've already processed to avoid duplicates
-        processed_dirs: set[str] = set()
+        # Track which files we've already copied to avoid duplicates
+        copied_files: set[str] = set()
 
         for node_name, params in static_file_params.items():
             if node_name not in mappings:
                 mappings[node_name] = {}
 
-            for param_name, file_paths in params.items():
+            for param_name, (original_param_value, file_paths) in params.items():
                 if not file_paths:
                     continue
 
-                # Find the common parent directory for all files associated with this param
-                # This should be the directory that was set as the parameter value
-                file_path_objects = [Path(fp) for fp in file_paths]
-                common_parent = Path(os.path.commonpath([str(fp) for fp in file_path_objects]))
-
-                # If common_parent is a file, get its parent directory
-                if common_parent.is_file():
-                    common_parent = common_parent.parent
-
-                parent_str = str(common_parent)
-                if parent_str in processed_dirs:
-                    # Already copied this directory, just record the mapping
-                    relative_parent = self._get_relative_path_without_root(parent_str)
-                    mappings[node_name][param_name] = relative_parent
-                    continue
-
-                processed_dirs.add(parent_str)
-
-                # Copy the entire directory structure
-                relative_parent = self._get_relative_path_without_root(parent_str)
-                dest_dir = static_files_dir / relative_parent
-                dest_dir.mkdir(parents=True, exist_ok=True)
-
-                # Copy all files maintaining their relative structure within the parent
+                # Copy all static files, preserving their full path structure
                 for file_path in file_paths:
+                    if file_path in copied_files:
+                        continue
+
                     fp = Path(file_path)
                     if not fp.exists():
                         logger.warning("Static file does not exist, skipping: %s", file_path)
                         continue
 
-                    # Get path relative to common parent
-                    try:
-                        relative_to_parent = fp.relative_to(common_parent)
-                    except ValueError:
-                        logger.warning("File not under common parent, skipping: %s", file_path)
-                        continue
-
-                    dest_file = dest_dir / relative_to_parent
+                    # Get relative path without root for the destination
+                    relative_file_path = self._get_relative_path_without_root(file_path)
+                    dest_file = static_files_dir / relative_file_path
                     dest_file.parent.mkdir(parents=True, exist_ok=True)
 
                     shutil.copy2(str(fp), str(dest_file))
+                    copied_files.add(file_path)
                     logger.debug("Copied static file: %s -> %s", file_path, dest_file)
 
-                # Record the mapping for this parameter
-                mappings[node_name][param_name] = relative_parent
+                # Record the mapping using the original parameter value's relative path
+                # This preserves whether the param was a file or directory path
+                relative_param_path = self._get_relative_path_without_root(original_param_value)
+                mappings[node_name][param_name] = relative_param_path
 
                 logger.info(
-                    "Copied static files for %s.%s: %d files from %s",
+                    "Copied static files for %s.%s: %d files, param path: %s",
                     node_name,
                     param_name,
                     len(file_paths),
-                    common_parent,
+                    original_param_value,
                 )
 
         return mappings
