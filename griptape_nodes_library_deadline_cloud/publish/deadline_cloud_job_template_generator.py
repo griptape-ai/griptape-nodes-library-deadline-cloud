@@ -244,7 +244,10 @@ if __name__ == "__main__":
         raise
 
     workflow_file_path = job_assets_dir / "workflow.py"
-    workflow_runner = DeadlineCloudWorkflowExecutor(storage_backend=StorageBackend("local"))
+    workflow_runner = DeadlineCloudWorkflowExecutor(
+        storage_backend=StorageBackend("local"),
+        location_to_remap=location_to_remap,
+    )
     execute_workflow(
         input=flow_input,
         storage_backend="local",

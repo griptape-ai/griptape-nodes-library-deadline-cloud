@@ -20,7 +20,7 @@ from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from deadline.job_attachments.upload import S3AssetManager, S3AssetUploader
 from dotenv import set_key
 from dotenv.main import DotEnv
-from griptape_nodes.exe_types.node_types import BaseNode, StartNode
+from griptape_nodes.exe_types.node_types import BaseNode, NodeDependencies, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -110,6 +110,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self._progress: float = 0.0
         self._farm_id: str | None = None
         self._queue_id: str | None = None
+        self._workflow_nodes: list[BaseNode] | None = None
+        self._static_file_mappings: dict[str, dict[str, str]] | None = None
 
     def publish_workflow(self) -> ResultPayload:
         try:
@@ -203,7 +205,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         path = Path(path_to_resolve).resolve()
         return str(path)
 
-    def _gather_models_for_workflow(self) -> list[str]:
+    def _get_all_nodes_for_workflow(self) -> list[BaseNode]:
+        """Get all Node objects in the current workflow's top-level flow.
+
+        Results are cached in the instance variable `_workflow_nodes` to avoid
+        redundant lookups during a single publish operation.
+        """
+        if self._workflow_nodes is not None:
+            return self._workflow_nodes
+
         flow_manager = GriptapeNodes.FlowManager()
         get_top_level_flow_result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
         if not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -219,41 +229,251 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.error(details)
             raise TypeError(details)
 
-        node_names = list_nodes_in_flow_result.node_names
+        object_manager = GriptapeNodes.ObjectManager()
+        nodes: list[BaseNode] = []
+        for node_name in list_nodes_in_flow_result.node_names:
+            node = object_manager.get_object_by_name(node_name)
+            if node is None:
+                details = f"Node '{node_name}' not found."
+                logger.error(details)
+                raise ValueError(details)
+            if isinstance(node, BaseNode):
+                nodes.append(node)
+
+        self._workflow_nodes = nodes
+        return self._workflow_nodes
+
+    def _gather_models_for_workflow(self) -> list[str]:
+        nodes = self._get_all_nodes_for_workflow()
         huggingface_repo_names = self._get_huggingface_repo_names()
         models: list[str] = []
-        for node_name in node_names:
-            models.extend(self._get_model_parameters_for_node(node_name, huggingface_repo_names))
+        for node in nodes:
+            models.extend(self._get_model_parameters_for_node(node, huggingface_repo_names))
 
         return models
 
-    def _get_model_parameters_for_node(self, node_name: str, huggingface_repo_names: list[str]) -> list[str]:
+    def _get_model_parameters_for_node(self, node: BaseNode, huggingface_repo_names: list[str]) -> list[str]:
         models: list[str] = []
-
         node_manager = GriptapeNodes.NodeManager()
 
-        object_manager = GriptapeNodes.ObjectManager()
-        node = object_manager.get_object_by_name(node_name)
-        if node is None:
-            details = f"Node '{node_name}' not found."
-            logger.error(details)
-            raise ValueError(details)
-
-        if isinstance(node, BaseNode):
-            parameters = node.parameters
-            for param in parameters:
-                get_param_value_result = node_manager.on_get_parameter_value_request(
-                    GetParameterValueRequest(parameter_name=param.name, node_name=node_name)
-                )
-                if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
-                    details = f"Failed to get parameter value for '{param.name}' in node '{node_name}'."
-                    logger.error(details)
-                    raise TypeError(details)
-                trimmed_value = str(get_param_value_result.value).split(" ")[0]
-                if trimmed_value in huggingface_repo_names:
-                    models.append(trimmed_value)
+        for param in node.parameters:
+            get_param_value_result = node_manager.on_get_parameter_value_request(
+                GetParameterValueRequest(parameter_name=param.name, node_name=node.name)
+            )
+            if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
+                details = f"Failed to get parameter value for '{param.name}' in node '{node.name}'."
+                logger.error(details)
+                raise TypeError(details)
+            trimmed_value = str(get_param_value_result.value).split(" ")[0]
+            if trimmed_value in huggingface_repo_names:
+                models.append(trimmed_value)
 
         return models
+
+    def _gather_static_file_dependencies(self) -> dict[str, dict[str, set[str]]]:  # noqa: C901, PLR0912
+        """Gather static file dependencies from all nodes in the workflow.
+
+        Returns a dict mapping node_name -> parameter_name -> set of static file paths.
+        The parameter_name is traced back to the source node/parameter if there's a connection.
+        """
+        nodes = self._get_all_nodes_for_workflow()
+        flow_manager = GriptapeNodes.FlowManager()
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Get the control flow for connection tracing
+        get_top_level_flow_result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        if not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess):
+            details = f"Failed to get top-level flow for workflow '{self._workflow_name}'."
+            logger.error(details)
+            raise TypeError(details)
+        flow_name = get_top_level_flow_result.flow_name
+        if flow_name is None:
+            details = f"Top-level flow name is None for workflow '{self._workflow_name}'."
+            logger.error(details)
+            raise ValueError(details)
+        control_flow = flow_manager.get_flow_by_name(flow_name)
+
+        # Collect static files and their associated parameters
+        # Structure: {node_name: {param_name: set of file paths}}
+        static_file_params: dict[str, dict[str, set[str]]] = {}
+
+        for node in nodes:
+            # Check if node has get_node_dependencies method
+            if not hasattr(node, "get_node_dependencies"):
+                continue
+
+            dependencies: NodeDependencies | None = node.get_node_dependencies()
+            if dependencies is None or not dependencies.static_files:
+                continue
+
+            # Find which parameter contains the path for these static files
+            # We look for parameters whose value is a parent directory of any static file
+            for param in node.parameters:
+                get_param_value_result = node_manager.on_get_parameter_value_request(
+                    GetParameterValueRequest(parameter_name=param.name, node_name=node.name)
+                )
+                if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
+                    continue
+
+                param_value = get_param_value_result.value
+                if not isinstance(param_value, str) or not param_value:
+                    continue
+
+                # Check if this parameter value is a parent path of any static file
+                param_path = Path(param_value)
+                matching_files: set[str] = set()
+                for static_file in dependencies.static_files:
+                    static_file_path = Path(static_file)
+                    try:
+                        # Check if static_file is under param_path
+                        static_file_path.relative_to(param_path)
+                        matching_files.add(static_file)
+                    except ValueError:
+                        # Not a child of param_path
+                        continue
+
+                if not matching_files:
+                    continue
+
+                # Trace back to source if there's an input connection
+                source_node_name, source_param_name = self._trace_parameter_to_source(control_flow, node, param)
+
+                if source_node_name not in static_file_params:
+                    static_file_params[source_node_name] = {}
+                if source_param_name not in static_file_params[source_node_name]:
+                    static_file_params[source_node_name][source_param_name] = set()
+
+                static_file_params[source_node_name][source_param_name].update(matching_files)
+
+        return static_file_params
+
+    def _trace_parameter_to_source(self, control_flow: Any, node: BaseNode, param: Any) -> tuple[str, str]:
+        """Trace a parameter back through connections to find the ultimate source.
+
+        Returns (source_node_name, source_param_name). If there's no connection,
+        returns the original node and parameter names.
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+
+        current_node = node
+        current_param = param
+
+        # Follow connections back to the source
+        max_depth = 100  # Prevent infinite loops
+        for _ in range(max_depth):
+            connected_inputs = flow_manager.get_connected_input_parameters(control_flow, current_node, current_param)
+
+            if not connected_inputs:
+                # No more connections, this is the source
+                break
+
+            # Take the first connection (there should typically be only one for data params)
+            source_node, source_param = connected_inputs[0]
+            current_node = source_node
+            current_param = source_param
+
+        return current_node.name, current_param.name
+
+    def _get_relative_path_without_root(self, absolute_path: str) -> str:
+        r"""Convert an absolute path to a relative path without the root.
+
+        Examples:
+            /Users/zach/dataset/image.png -> Users/zach/dataset/image.png
+            C:\Users\zach\dataset\image.png -> Users/zach/dataset/image.png
+        """
+        path = Path(absolute_path)
+
+        # Get the parts without the root/anchor
+        # On Unix: ('/', 'Users', 'zach', ...) -> ('Users', 'zach', ...)
+        # On Windows: ('C:\\', 'Users', 'zach', ...) -> ('Users', 'zach', ...)
+        parts = path.parts[1:]  # Skip the root/anchor
+
+        return str(Path(*parts)) if parts else ""
+
+    def _copy_static_files_to_assets(
+        self, static_file_params: dict[str, dict[str, set[str]]], assets_dir: Path
+    ) -> dict[str, dict[str, str]]:
+        """Copy static files to assets directory and return path mappings.
+
+        Args:
+            static_file_params: Dict of node_name -> param_name -> set of file paths
+            assets_dir: The assets directory to copy files into
+
+        Returns:
+            Dict of node_name -> param_name -> relative path for runtime substitution
+        """
+        static_files_dir = assets_dir / "static_files"
+        static_files_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build mappings: node_name -> param_name -> new relative path
+        mappings: dict[str, dict[str, str]] = {}
+
+        # Track which directories we've already processed to avoid duplicates
+        processed_dirs: set[str] = set()
+
+        for node_name, params in static_file_params.items():
+            if node_name not in mappings:
+                mappings[node_name] = {}
+
+            for param_name, file_paths in params.items():
+                if not file_paths:
+                    continue
+
+                # Find the common parent directory for all files associated with this param
+                # This should be the directory that was set as the parameter value
+                file_path_objects = [Path(fp) for fp in file_paths]
+                common_parent = Path(os.path.commonpath([str(fp) for fp in file_path_objects]))
+
+                # If common_parent is a file, get its parent directory
+                if common_parent.is_file():
+                    common_parent = common_parent.parent
+
+                parent_str = str(common_parent)
+                if parent_str in processed_dirs:
+                    # Already copied this directory, just record the mapping
+                    relative_parent = self._get_relative_path_without_root(parent_str)
+                    mappings[node_name][param_name] = relative_parent
+                    continue
+
+                processed_dirs.add(parent_str)
+
+                # Copy the entire directory structure
+                relative_parent = self._get_relative_path_without_root(parent_str)
+                dest_dir = static_files_dir / relative_parent
+                dest_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy all files maintaining their relative structure within the parent
+                for file_path in file_paths:
+                    fp = Path(file_path)
+                    if not fp.exists():
+                        logger.warning("Static file does not exist, skipping: %s", file_path)
+                        continue
+
+                    # Get path relative to common parent
+                    try:
+                        relative_to_parent = fp.relative_to(common_parent)
+                    except ValueError:
+                        logger.warning("File not under common parent, skipping: %s", file_path)
+                        continue
+
+                    dest_file = dest_dir / relative_to_parent
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    shutil.copy2(str(fp), str(dest_file))
+                    logger.debug("Copied static file: %s -> %s", file_path, dest_file)
+
+                # Record the mapping for this parameter
+                mappings[node_name][param_name] = relative_parent
+
+                logger.info(
+                    "Copied static files for %s.%s: %d files from %s",
+                    node_name,
+                    param_name,
+                    len(file_paths),
+                    common_parent,
+                )
+
+        return mappings
 
     def _validate_workflow(self, workflow_name: str) -> Workflow:
         """Validate the workflow before publishing."""
@@ -771,7 +991,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
         return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
 
-    def _package_workflow(self, workflow_name: str) -> str:
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
         """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
@@ -846,7 +1066,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
 
-            # 6. Generate Job Template
+            # 6. Gather and copy static file dependencies
+            static_file_params = self._gather_static_file_dependencies()
+            if static_file_params:
+                self._static_file_mappings = self._copy_static_files_to_assets(static_file_params, assets_dir)
+                # Write mappings file for runtime substitution
+                with (assets_dir / "static_file_mappings.json").open("w", encoding="utf-8") as mappings_file:
+                    json.dump(self._static_file_mappings, mappings_file, indent=2)
+                logger.info("Static file mappings written: %s", self._static_file_mappings)
+
+            # 7. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
                 job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
             )

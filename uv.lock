@@ -1,6 +1,6 @@
 version = 1
-revision = 2
-requires-python = ">=3.12.0, <3.13"
+revision = 3
+requires-python = "==3.12.*"
 
 [[package]]
 name = "aiofiles"
@@ -259,12 +259,13 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.8.12"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
     { name = "jinja2" },
+    { name = "json-schema-to-pydantic" },
     { name = "marshmallow" },
     { name = "marshmallow-enum" },
     { name = "numpy" },
@@ -280,15 +281,15 @@ dependencies = [
     { name = "urllib3" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ef/71/8c35a8854e0dc8718a5a2d17c88dad0ecf1bf87c9d381440b70b125365fe/griptape-1.8.12.tar.gz", hash = "sha256:ad47f404fc877d61004870d0388e14170eab6e764b65c0105f3ea54f5a60c7ac", size = 197942, upload-time = "2025-10-29T23:44:12.426Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/f5/b74726219f3252f3c87605c331cae856712cd60656c9afca5db14c61e7be/griptape-1.9.0.tar.gz", hash = "sha256:cc1e472830adeec488603bd5ece2977086d513c979ee9cb2e8cad3aa1c2b108d", size = 192126, upload-time = "2026-01-13T21:23:26.776Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/17/9f61db3e6adcc82a30d9ad3fd96935d3a6716723ce2a356567bc9b151bbb/griptape-1.8.12-py3-none-any.whl", hash = "sha256:926b01ce1ea5a35824e58b51087351f3a7a7fc4d8468a031f451985f3c22b8f0", size = 437125, upload-time = "2025-10-29T23:44:10.662Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/d3/95309c28f85d5361a3d503170f0bd4b0b4a9b8911807826bcbb5395dd3a9/griptape-1.9.0-py3-none-any.whl", hash = "sha256:497b460cdaa048b6c53692c375deceafb762b2c24ee6dd47bc47969bf24cc5e6", size = 427959, upload-time = "2026-01-13T21:23:28.225Z" },
 ]
 
 [[package]]
 name = "griptape-nodes"
-version = "0.67.0"
-source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#a9d3f3ddd0ae8bf2ed7fc53ed0c850672258edc5" }
+version = "0.72.0"
+source = { git = "https://github.com/griptape-ai/griptape-nodes?rev=main#75f57fb75c53c0000353d1cda3acdcf4f2d5ed92" }
 dependencies = [
     { name = "aiofiles" },
     { name = "aioshutil" },
@@ -310,6 +311,7 @@ dependencies = [
     { name = "rich" },
     { name = "ruamel-yaml" },
     { name = "semver" },
+    { name = "send2trash" },
     { name = "tomlkit" },
     { name = "typer" },
     { name = "uv" },
@@ -516,6 +518,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/63/2c3c3c8cc1c28a0a20a9ab0eff5439c989ce3cc5956d8a4c7cf1eae0a06e/json_repair-0.52.0.tar.gz", hash = "sha256:0eee59cb3145b462b0734d4cf3246b797686caa669d52eee8dd30e09ea6d7876", size = 35384, upload-time = "2025-10-05T17:18:12.387Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/7f/3a4e456da9a0f9ac54d9842ed51e96960826a98456f0826a9b3e808713c4/json_repair-0.52.0-py3-none-any.whl", hash = "sha256:c783069906a456f62e2a553fbef32a420a4745ff943e2014411728edcc7bf60a", size = 26350, upload-time = "2025-10-05T17:18:10.859Z" },
+]
+
+[[package]]
+name = "json-schema-to-pydantic"
+version = "0.4.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/87/b8/90a3af11bcf9f8c76f1f7399705cd6c23c2271f1d70f882529bde2c1ad86/json_schema_to_pydantic-0.4.9.tar.gz", hash = "sha256:f71bc57c9016a6cecaf259392b4a3f35a34ad79da3934a64d21d73f526c6e28d", size = 53020, upload-time = "2026-02-01T20:47:47.29Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/2e/58bada6e9195417baff0b06be34cd3b1a6c19153b4d08a4dea2e8b324cb5/json_schema_to_pydantic-0.4.9-py3-none-any.whl", hash = "sha256:7b1126aa70a482f8442866139d14e71a5f678ae5bece72b51db28374c4237cc9", size = 16351, upload-time = "2026-02-01T20:47:45.705Z" },
 ]
 
 [[package]]
@@ -1157,6 +1171,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/d1/d3159231aec234a59dd7d601e9dd9fe96f3afff15efd33c1070019b26132/semver-3.0.4.tar.gz", hash = "sha256:afc7d8c584a5ed0a11033af086e8af226a9c0b206f313e0301f8dd7b6b589602", size = 269730, upload-time = "2025-01-24T13:19:27.617Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/24/4d91e05817e92e3a61c8a21e08fd0f390f5301f1c448b137c57c4bc6e543/semver-3.0.4-py3-none-any.whl", hash = "sha256:9c824d87ba7f7ab4a1890799cec8596f15c1241cb473404ea1cb0c55e4b04746", size = 17912, upload-time = "2025-01-24T13:19:24.949Z" },
+]
+
+[[package]]
+name = "send2trash"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/f0/184b4b5f8d00f2a92cf96eec8967a3d550b52cf94362dad1100df9e48d57/send2trash-2.1.0.tar.gz", hash = "sha256:1c72b39f09457db3c05ce1d19158c2cbef4c32b8bedd02c155e49282b7ea7459", size = 17255, upload-time = "2026-01-14T06:27:36.056Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/78/504fdd027da3b84ff1aecd9f6957e65f35134534ccc6da8628eb71e76d3f/send2trash-2.1.0-py3-none-any.whl", hash = "sha256:0da2f112e6d6bb22de6aa6daa7e144831a4febf2a87261451c4ad849fe9a873c", size = 17610, upload-time = "2026-01-14T06:27:35.218Z" },
 ]
 
 [[package]]
