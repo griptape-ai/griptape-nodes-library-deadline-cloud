@@ -157,6 +157,7 @@ echo 'Virtual environment setup complete.'
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -174,9 +175,16 @@ models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
 output_dir_subdirectory = r"{{{{Param.OutputDir}}}}"
 
 job_assets_dir = Path(location_to_remap) / "assets"
-synced_workflows_dir = Path(location_to_remap) / "output" / "synced_workflows"
-synced_workflows_dir.mkdir(parents=True, exist_ok=True)
+output_dir = Path(location_to_remap) / "output" / output_dir_subdirectory
+output_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(job_assets_dir))
+
+# Copy the contents of static_files/ into the tracked output directory so that
+# project-relative directory macros (e.g. {{outputs}}) resolve inside it.
+_bundled_static_files = job_assets_dir / "static_files"
+if _bundled_static_files.exists():
+    shutil.copytree(str(_bundled_static_files), str(output_dir), dirs_exist_ok=True)
+    logger.info("Copied static files contents into output directory: %s", output_dir)
 
 # Load environment variables
 if (job_assets_dir / ".env").exists():
@@ -184,9 +192,28 @@ if (job_assets_dir / ".env").exists():
 
 # Set HuggingFace hub cache directory for model cache, and print
 os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
-os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(Path(location_to_remap) / "output" / output_dir_subdirectory)
+os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(output_dir)
 logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
 logger.info(f"Griptape workspace directory set to: {{os.environ['GTN_CONFIG_WORKSPACE_DIRECTORY']}}")
+
+def _load_project_template(project_path: Path) -> None:
+    # Load and activate the project template before libraries are registered
+    from griptape_nodes.retained_mode.events.project_events import (  # noqa: PLC0415
+        LoadProjectTemplateRequest,
+        LoadProjectTemplateResultSuccess,
+        SetCurrentProjectRequest,
+    )
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
+
+    load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_path))
+    if not isinstance(load_result, LoadProjectTemplateResultSuccess):
+        logger.warning("Failed to load project template from %s: %s", project_path, load_result)
+        return
+    set_result = GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
+    if set_result.failed():
+        logger.warning("Failed to set project as current: %s", set_result)
+        return
+    logger.info("Loaded and activated project template from %s", project_path)
 
 def _set_config(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
@@ -197,13 +224,22 @@ def _set_config(libraries: list[str]) -> None:
         value=False,
     )
     config_manager.set_config_value(
+        key="workspace_directory",
+        value=str(output_dir),
+    )
+    # Set libraries_to_register LAST — this triggers library loading, and the
+    # project template must already be active so that nodes which resolve
+    # situations during init (e.g. save_node_output) see the overrides.
+    config_manager.set_config_value(
         key="app_events.on_app_initialization_complete.libraries_to_register",
         value=libraries,
     )
-    config_manager.set_config_value(
-        key="workspace_directory",
-        value=str(Path(location_to_remap) / "output"),
-    )
+
+# Load project template from the output directory (where we copied it)
+# BEFORE libraries so that situations are available during node initialization.
+_project_file = output_dir / "project.yml"
+if _project_file.exists():
+    _load_project_template(_project_file)
 
 _set_config(LIBRARIES)
 
@@ -243,8 +279,12 @@ if __name__ == "__main__":
         logger.info(msg)
         raise
 
-    workflow_file_path = job_assets_dir / "workflow.py"
-    workflow_runner = DeadlineCloudWorkflowExecutor(storage_backend=StorageBackend("local"))
+    project_file_path = output_dir / "project.yml"
+    workflow_runner = DeadlineCloudWorkflowExecutor(
+        storage_backend=StorageBackend("local"),
+        project_file_path=project_file_path if project_file_path.exists() else None,
+        skip_library_loading=True,
+    )
     execute_workflow(
         input=flow_input,
         storage_backend="local",
