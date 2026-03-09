@@ -19,6 +19,11 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.files.file import File, FileWriteError
+from griptape_nodes.retained_mode.events.os_events import (
+    CopyFileRequest,
+    CopyFileResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_poller import DeadlineCloudJobDetails, DeadlineCloudJobPoller
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
@@ -401,8 +406,15 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                         relative_in_static = output_file[staticfiles_idx + len("staticfiles/") :]
                         dest_file = static_dir / relative_in_static
                         dest_file.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(str(static_file_path), str(dest_file))
-                    except (ValueError, OSError) as e:
+                        copy_result = GriptapeNodes.handle_request(
+                            CopyFileRequest(
+                                source_path=str(static_file_path),
+                                destination_path=str(dest_file),
+                            )
+                        )
+                        if not isinstance(copy_result, CopyFileResultSuccess):
+                            logger.warning("Failed to copy static file %s to %s", output_file, dest_file)
+                    except ValueError as e:
                         logger.warning("Failed to copy static file %s: %s", output_file, e)
 
         # Translate worker paths to local paths

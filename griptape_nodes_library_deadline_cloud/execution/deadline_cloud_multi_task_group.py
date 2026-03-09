@@ -79,6 +79,9 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
 
+        # Add subprocess execution status component for real-time GUI updates
+        self._add_subflow_execution_parameters()
+
         # Iteration parameters
         self.items_list = Parameter(
             name="items",
