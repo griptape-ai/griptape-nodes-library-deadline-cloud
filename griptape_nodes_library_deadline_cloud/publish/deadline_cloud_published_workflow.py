@@ -18,6 +18,12 @@ from deadline.job_attachments.models import JobAttachmentS3Settings
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
+from griptape_nodes.files.file import File, FileWriteError
+from griptape_nodes.retained_mode.events.os_events import (
+    CopyFileRequest,
+    CopyFileResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_poller import DeadlineCloudJobDetails, DeadlineCloudJobPoller
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
@@ -371,10 +377,18 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
     def _extract_workflow_output_from_output_paths(
         self, output_paths: dict[str, list[str]], output_dir_subdir: str
     ) -> dict:
-        """Extract workflow output from the output paths."""
-        # output_paths is a dictionary of root paths to output file paths like:
-        # {'/var/folders/3v/jg416m5115j47dxwzznmqfhc0000gn/T/flowy_deadline_bundle_3s0cvl9d': ['output/workflow_output.json']}  # noqa: ERA001
+        """Extract workflow output from the output paths.
 
+        Handles the Deadline-specific output structure where files are organized
+        under output/{OutputDir}/:
+        - workflow_output.json: The workflow result metadata
+        - staticfiles/: Static files generated during workflow execution
+        - outputs/: Node output files (referenced in workflow_output.json)
+        """
+        # output_paths is a dictionary of root paths to output file paths like:
+        # {'/var/folders/.../flowy_deadline_bundle_xxx': ['output/abc123/workflow_output.json']}  # noqa: ERA001
+
+        output_segment = f"output/{output_dir_subdir}"
         workflow_output = {}
         for root_path, output_files in output_paths.items():
             for output_file in output_files:
@@ -382,18 +396,119 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                     workflow_file_path = Path(root_path) / output_file
                     with workflow_file_path.open(encoding="utf-8") as f:
                         workflow_output = json.load(f)
-                    workflow_file_path.unlink(missing_ok=True)  # Remove the workflow output file after reading
-                elif "output" in output_file and "staticfiles" in output_file:
+                    workflow_file_path.unlink(missing_ok=True)
+                elif "staticfiles" in output_file and output_file.startswith(output_segment):
+                    # Copy static files preserving subdirectory structure
                     static_file_path = Path(root_path) / output_file
                     static_dir = self._get_static_files_directory()
-                    # Copy the static file to the static directory
-                    shutil.copy(static_file_path, static_dir / static_file_path.name)
+                    try:
+                        staticfiles_idx = output_file.index("staticfiles/")
+                        relative_in_static = output_file[staticfiles_idx + len("staticfiles/") :]
+                        dest_file = static_dir / relative_in_static
+                        dest_file.parent.mkdir(parents=True, exist_ok=True)
+                        copy_result = GriptapeNodes.handle_request(
+                            CopyFileRequest(
+                                source_path=str(static_file_path),
+                                destination_path=str(dest_file),
+                            )
+                        )
+                        if not isinstance(copy_result, CopyFileResultSuccess):
+                            logger.warning("Failed to copy static file %s to %s", output_file, dest_file)
+                    except ValueError as e:
+                        logger.warning("Failed to copy static file %s: %s", output_file, e)
 
         # Translate worker paths to local paths
         if workflow_output:
             workflow_output = self._translate_worker_paths_to_local(workflow_output, output_paths, output_dir_subdir)
 
+        # Write any macro-referenced output files to the correct local project locations
+        if workflow_output:
+            self._write_macro_output_files(workflow_output, output_paths, output_dir_subdir)
+
         return workflow_output
+
+    def _write_macro_output_files(
+        self, workflow_output: dict[str, Any], output_paths: dict[str, list[str]], output_dir_subdir: str
+    ) -> None:
+        """Write macro-referenced output files to the correct local project locations.
+
+        Walks the workflow output dictionary looking for parameter values that contain
+        macro strings (e.g., "{outputs}/image.png"). For each, finds the corresponding
+        downloaded file in the temp directory and uses the File class to write it to
+        the correct local project location.
+
+        Args:
+            workflow_output: The workflow output dictionary (already path-translated).
+            output_paths: A mapping of local root paths to their relative output file paths.
+            output_dir_subdir: The unique output subdirectory (e.g., 'abc123def456').
+        """
+        output_segment = f"output/{output_dir_subdir}"
+
+        # Build a lookup of relative paths within the output dir to their full local paths
+        downloaded_files: dict[str, Path] = {}
+        for local_root, output_files in output_paths.items():
+            for output_file in output_files:
+                if output_file.startswith(output_segment):
+                    relative_in_output = output_file[len(output_segment) + 1 :]
+                    downloaded_files[relative_in_output] = Path(local_root) / output_file
+
+        def visit_value(value: Any) -> None:
+            """Recursively visit values and write any macro-referenced files."""
+            if isinstance(value, str) and "{" in value and "}" in value:
+                self._try_write_macro_file(value, downloaded_files)
+            elif isinstance(value, dict):
+                for v in value.values():
+                    visit_value(v)
+            elif isinstance(value, list):
+                for item in value:
+                    visit_value(item)
+
+        visit_value(workflow_output)
+
+    def _try_write_macro_file(self, macro_string: str, downloaded_files: dict[str, Path]) -> None:
+        """Try to write a macro-referenced file to the correct local project location.
+
+        Resolves the macro against the local project to determine the relative path,
+        finds the corresponding downloaded file, and uses the File class to write it
+        to the correct local project location.
+
+        Args:
+            macro_string: A macro path string like "{outputs}/image.png".
+            downloaded_files: Map of relative paths to their downloaded local paths.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroRequest,
+            GetPathForMacroResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Resolve the macro to get the relative path the worker would have produced
+        try:
+            parsed = ParsedMacro(macro_string)
+            if not parsed.get_variables():
+                return
+
+            result = GriptapeNodes.handle_request(GetPathForMacroRequest(parsed_macro=parsed, variables={}))
+            if not isinstance(result, GetPathForMacroResultSuccess):
+                return
+        except Exception:
+            return
+
+        # Find the corresponding downloaded file
+        relative_path = str(result.resolved_path)
+        source_path = downloaded_files.get(relative_path)
+        if source_path is None or not source_path.exists():
+            return
+
+        # Read the downloaded file and write it via the File class to the local project
+        try:
+            file_bytes = source_path.read_bytes()
+            local_path = File(macro_string).write_bytes(file_bytes)
+        except FileWriteError as e:
+            logger.warning("Failed to write macro output '%s': %s", macro_string, e)
+        else:
+            logger.info("Wrote macro output '%s' -> '%s'", macro_string, local_path)
 
     def _collect_input_parameters(self) -> dict[str, dict[str, Any]]:
         """Collect input parameters and structure them for the published workflow."""

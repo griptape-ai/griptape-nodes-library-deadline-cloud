@@ -4,7 +4,6 @@ import importlib.metadata
 import json
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,6 +19,7 @@ from deadline.job_attachments.models import Attachments, JobAttachmentS3Settings
 from deadline.job_attachments.upload import S3AssetManager, S3AssetUploader
 from dotenv import set_key
 from dotenv.main import DotEnv
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.exe_types.node_types import BaseNode, StartNode
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
@@ -47,6 +47,12 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    GetCurrentProjectRequest,
+    GetCurrentProjectResultSuccess,
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
 )
 from griptape_nodes.retained_mode.events.secrets_events import (
     GetAllSecretValuesRequest,
@@ -89,6 +95,11 @@ T = TypeVar("T")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("deadline_cloud_publisher")
 
+# FileSelector node detection constants
+FILE_SELECTOR_LIBRARY_NAME = "Griptape Nodes Library"
+FILE_SELECTOR_NODE_TYPE = "FileSelector"
+FILE_SELECTOR_PARAM_NAME = "selected_file"
+
 
 class DeadlineCloudPublisher(BaseDeadlineCloud):
     def __init__(
@@ -110,6 +121,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         self._progress: float = 0.0
         self._farm_id: str | None = None
         self._queue_id: str | None = None
+        self._workflow_nodes: list[BaseNode] | None = None
 
     def publish_workflow(self) -> ResultPayload:
         try:
@@ -203,7 +215,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         path = Path(path_to_resolve).resolve()
         return str(path)
 
-    def _gather_models_for_workflow(self) -> list[str]:
+    def _get_all_nodes_for_workflow(self) -> list[BaseNode]:
+        """Get all Node objects in the current workflow's top-level flow.
+
+        Results are cached in the instance variable ``_workflow_nodes`` to avoid
+        redundant lookups during a single publish operation.
+        """
+        if self._workflow_nodes is not None:
+            return self._workflow_nodes
+
         flow_manager = GriptapeNodes.FlowManager()
         get_top_level_flow_result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
         if not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess):
@@ -219,41 +239,210 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.error(details)
             raise TypeError(details)
 
-        node_names = list_nodes_in_flow_result.node_names
+        object_manager = GriptapeNodes.ObjectManager()
+        nodes: list[BaseNode] = []
+        for node_name in list_nodes_in_flow_result.node_names:
+            node = object_manager.get_object_by_name(node_name)
+            if node is None:
+                details = f"Node '{node_name}' not found."
+                logger.error(details)
+                raise ValueError(details)
+            if isinstance(node, BaseNode):
+                nodes.append(node)
+
+        self._workflow_nodes = nodes
+        return self._workflow_nodes
+
+    def _gather_models_for_workflow(self) -> list[str]:
+        nodes = self._get_all_nodes_for_workflow()
         huggingface_repo_names = self._get_huggingface_repo_names()
         models: list[str] = []
-        for node_name in node_names:
-            models.extend(self._get_model_parameters_for_node(node_name, huggingface_repo_names))
+        for node in nodes:
+            models.extend(self._get_model_parameters_for_node(node, huggingface_repo_names))
 
         return models
 
-    def _get_model_parameters_for_node(self, node_name: str, huggingface_repo_names: list[str]) -> list[str]:
+    def _get_model_parameters_for_node(self, node: BaseNode, huggingface_repo_names: list[str]) -> list[str]:
         models: list[str] = []
-
         node_manager = GriptapeNodes.NodeManager()
 
-        object_manager = GriptapeNodes.ObjectManager()
-        node = object_manager.get_object_by_name(node_name)
-        if node is None:
-            details = f"Node '{node_name}' not found."
-            logger.error(details)
-            raise ValueError(details)
-
-        if isinstance(node, BaseNode):
-            parameters = node.parameters
-            for param in parameters:
-                get_param_value_result = node_manager.on_get_parameter_value_request(
-                    GetParameterValueRequest(parameter_name=param.name, node_name=node_name)
-                )
-                if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
-                    details = f"Failed to get parameter value for '{param.name}' in node '{node_name}'."
-                    logger.error(details)
-                    raise TypeError(details)
-                trimmed_value = str(get_param_value_result.value).split(" ")[0]
-                if trimmed_value in huggingface_repo_names:
-                    models.append(trimmed_value)
+        for param in node.parameters:
+            get_param_value_result = node_manager.on_get_parameter_value_request(
+                GetParameterValueRequest(parameter_name=param.name, node_name=node.name)
+            )
+            if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
+                details = f"Failed to get parameter value for '{param.name}' in node '{node.name}'."
+                logger.error(details)
+                raise TypeError(details)
+            trimmed_value = str(get_param_value_result.value).split(" ")[0]
+            if trimmed_value in huggingface_repo_names:
+                models.append(trimmed_value)
 
         return models
+
+    def _gather_file_selector_nodes(self) -> list[tuple[str, str]]:
+        """Find all FileSelector nodes in the workflow and extract their macro path strings.
+
+        Returns:
+            List of (node_name, macro_string) tuples for each FileSelector node
+            that has a non-empty file_path parameter value.
+        """
+        nodes = self._get_all_nodes_for_workflow()
+        file_selector_nodes: list[tuple[str, str]] = []
+
+        for node in nodes:
+            if (
+                node.metadata.get("library") != FILE_SELECTOR_LIBRARY_NAME
+                or node.metadata.get("node_type") != FILE_SELECTOR_NODE_TYPE
+            ):
+                continue
+
+            get_param_value_result = GriptapeNodes.handle_request(
+                GetParameterValueRequest(parameter_name=FILE_SELECTOR_PARAM_NAME, node_name=node.name)
+            )
+            if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
+                logger.warning(
+                    "FileSelector node '%s' has no '%s' parameter value, skipping.",
+                    node.name,
+                    FILE_SELECTOR_PARAM_NAME,
+                )
+                continue
+
+            param_value = get_param_value_result.value
+            if not param_value:
+                logger.warning(
+                    "FileSelector node '%s' has empty or non-string '%s' value, skipping.",
+                    node.name,
+                    FILE_SELECTOR_PARAM_NAME,
+                )
+                continue
+
+            file_selector_nodes.append((node.name, param_value))
+            logger.info("Found FileSelector node '%s' with file_path: %s", node.name, param_value)
+
+        return file_selector_nodes
+
+    def _resolve_and_copy_static_files(
+        self,
+        file_selector_nodes: list[tuple[str, str]],
+        assets_dir: Path,
+    ) -> None:
+        """Resolve macro paths from FileSelector nodes and copy files into the bundle.
+
+        For each FileSelector node:
+        1. Parses the macro string to extract variable names (directory macros).
+        2. Resolves the macro to an absolute local path via GetPathForMacroRequest.
+        3. Copies the file into assets/static_files/ preserving the resolved relative path.
+
+        Args:
+            file_selector_nodes: List of (node_name, macro_string) tuples.
+            assets_dir: The assets directory within the job bundle.
+        """
+        static_files_dir = assets_dir / "static_files"
+        static_files_dir.mkdir(parents=True, exist_ok=True)
+
+        copied_files: set[Path] = set()
+
+        for node_name, macro_string in file_selector_nodes:
+            # Parse the macro string
+            try:
+                parsed = ParsedMacro(macro_string)
+            except Exception:
+                logger.warning(
+                    "Failed to parse macro string '%s' from node '%s', skipping.",
+                    macro_string,
+                    node_name,
+                )
+                continue
+
+            # Resolve to absolute local path
+            resolve_result = GriptapeNodes.handle_request(GetPathForMacroRequest(parsed_macro=parsed, variables={}))
+            if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+                logger.warning(
+                    "Failed to resolve macro path '%s' for node '%s': %s",
+                    macro_string,
+                    node_name,
+                    resolve_result,
+                )
+                continue
+
+            absolute_path = resolve_result.absolute_path
+            resolved_relative_path = resolve_result.resolved_path
+
+            if not absolute_path.exists():
+                logger.warning(
+                    "Resolved file does not exist: %s (from node '%s')",
+                    absolute_path,
+                    node_name,
+                )
+                continue
+
+            # Copy file or directory to static_files/ preserving the resolved relative path
+            if absolute_path not in copied_files:
+                dest = static_files_dir / resolved_relative_path
+                if absolute_path.is_dir():
+                    copy_tree_result = GriptapeNodes.handle_request(
+                        CopyTreeRequest(
+                            source_path=str(absolute_path),
+                            destination_path=str(dest),
+                            dirs_exist_ok=True,
+                        )
+                    )
+                    if not isinstance(copy_tree_result, CopyTreeResultSuccess):
+                        details = f"Failed to copy directory '{absolute_path}' to '{dest}' for node '{node_name}'."
+                        logger.error(details)
+                        raise RuntimeError(details)
+                else:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    copy_file_result = GriptapeNodes.handle_request(
+                        CopyFileRequest(
+                            source_path=str(absolute_path),
+                            destination_path=str(dest),
+                        )
+                    )
+                    if not isinstance(copy_file_result, CopyFileResultSuccess):
+                        details = f"Failed to copy file '{absolute_path}' to '{dest}' for node '{node_name}'."
+                        logger.error(details)
+                        raise RuntimeError(details)
+                copied_files.add(absolute_path)
+                logger.debug("Copied static path: %s -> %s", absolute_path, dest)
+
+            logger.info(
+                "Bundled static file for %s.%s: %s -> %s",
+                node_name,
+                FILE_SELECTOR_PARAM_NAME,
+                macro_string,
+                resolved_relative_path,
+            )
+
+    def _write_deadline_project_template(self, assets_dir: Path) -> None:
+        """Write the current project template unmodified for the Deadline worker.
+
+        The worker script copies the project file (and static files) into the
+        tracked output directory so that directory macros like ``{outputs}``
+        resolve relative to that location naturally.
+
+        Args:
+            assets_dir: The assets directory within the job bundle.
+        """
+        current_project_result = GriptapeNodes.handle_request(GetCurrentProjectRequest())
+        if not isinstance(current_project_result, GetCurrentProjectResultSuccess):
+            logger.warning(
+                "Could not retrieve current project template: %s. "
+                "No project.yml will be written for the Deadline worker.",
+                current_project_result,
+            )
+            return
+
+        template = current_project_result.project_info.template
+
+        # Write the template as-is — no situation or directory overrides needed.
+        static_files_dir = assets_dir / "static_files"
+        static_files_dir.mkdir(parents=True, exist_ok=True)
+        project_yaml = template.to_yaml()
+        project_yaml_path = static_files_dir / "project.yml"
+        project_yaml_path.write_text(project_yaml, encoding="utf-8")
+        logger.info("Wrote project template to %s", project_yaml_path)
 
     def _validate_workflow(self, workflow_name: str) -> Workflow:
         """Validate the workflow before publishing."""
@@ -689,25 +878,69 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
         return library_paths
 
+    def _find_griptape_nodes_distribution(self) -> importlib.metadata.Distribution | None:
+        """Find the griptape_nodes distribution from the current executable's venv.
+
+        Uses sys.executable to derive the venv site-packages path, scoping the
+        search to avoid picking up distributions from other venvs that may have
+        leaked onto sys.path via dynamic library loading.
+
+        Returns:
+            The Distribution object for griptape_nodes, or None if not found.
+        """
+        import sys
+
+        # Derive venv site-packages from sys.executable (without resolving symlinks,
+        # which would follow through to the system Python).
+        exe_path = Path(sys.executable)
+        venv_root = exe_path.parent.parent
+        site_packages = venv_root / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+
+        if not site_packages.exists():
+            logger.info("Venv site-packages not found at %s, falling back to default lookup", site_packages)
+            try:
+                return importlib.metadata.distribution("griptape_nodes")
+            except importlib.metadata.PackageNotFoundError:
+                return None
+
+        logger.info("Searching for griptape_nodes in venv site-packages: %s", site_packages)
+        for dist in importlib.metadata.distributions(path=[str(site_packages)]):
+            if dist.metadata["Name"] == "griptape-nodes":
+                logger.info("Found griptape_nodes at %s", dist.locate_file(""))
+                return dist
+
+        logger.info("griptape_nodes not found in venv site-packages, falling back to default lookup")
+        try:
+            return importlib.metadata.distribution("griptape_nodes")
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
     def _get_install_source(self) -> tuple[Literal["git", "file", "pypi"], str | None]:
         """Determines the install source of the Griptape Nodes package.
 
         Returns:
             tuple: A tuple containing the install source and commit ID (if applicable).
         """
-        dist = importlib.metadata.distribution("griptape_nodes")
+        dist = self._find_griptape_nodes_distribution()
+        if dist is None:
+            logger.info("Could not find griptape_nodes distribution, assuming pypi install")
+            return "pypi", None
         direct_url_text = dist.read_text("direct_url.json")
+        logger.info("griptape_nodes direct_url.json: %s", direct_url_text)
         # installing from pypi doesn't have a direct_url.json file
         if direct_url_text is None:
-            logger.debug("No direct_url.json file found, assuming pypi install")
+            logger.info("No direct_url.json file found, assuming pypi install")
             return "pypi", None
 
         direct_url_info = json.loads(direct_url_text)
         url = direct_url_info.get("url")
+        logger.info("griptape_nodes install URL: %s", url)
         if url.startswith("file://"):
             try:
                 pkg_dir = Path(str(dist.locate_file(""))).resolve()
+                logger.info("Package directory: %s", pkg_dir)
                 git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
+                logger.info("Git root found: %s", git_root)
                 commit = (
                     subprocess.check_output(
                         ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
@@ -717,17 +950,18 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     .decode()
                     .strip()
                 )
-            except (StopIteration, subprocess.CalledProcessError):
-                logger.debug("File URL but no git repo → file")
+            except (StopIteration, subprocess.CalledProcessError) as e:
+                logger.info("File URL but no git repo or git command failed: %s", e)
                 return "file", None
             else:
-                logger.debug("Detected git repo at %s (commit %s)", git_root, commit)
+                logger.info("Detected git install source at %s (commit %s)", git_root, commit)
                 return "git", commit
         if "vcs_info" in direct_url_info:
-            logger.debug("Detected git repo at %s", url)
-            return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
+            commit_id = direct_url_info["vcs_info"].get("commit_id", "")[:7]
+            logger.info("Detected vcs_info git install source at %s (commit %s)", url, commit_id)
+            return "git", commit_id
         # Fall back to pypi if no other source is found
-        logger.debug("Failed to detect install source, assuming pypi")
+        logger.info("No install source detected, assuming pypi")
         return "pypi", None
 
     def _get_merged_env_file_mapping(self, workspace_env_file_path: Path) -> dict[str, Any]:
@@ -771,7 +1005,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
         return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
 
-    def _package_workflow(self, workflow_name: str) -> str:
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
         """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
@@ -806,10 +1040,28 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 raise TypeError(details)  # noqa: TRY301
 
             init_file_path = local_publish_path / "__init__.py"
-            shutil.copyfile(init_file_path, assets_dir / "__init__.py")
+            copy_init_result = GriptapeNodes.handle_request(
+                CopyFileRequest(
+                    source_path=str(init_file_path),
+                    destination_path=str(assets_dir / "__init__.py"),
+                )
+            )
+            if not isinstance(copy_init_result, CopyFileResultSuccess):
+                details = f"Failed to copy '{init_file_path}' to '{assets_dir / '__init__.py'}'."
+                logger.error(details)
+                raise TypeError(details)  # noqa: TRY301
 
             deadline_workflow_executor_file_path = local_publish_path / "deadline_cloud_workflow_executor.py"
-            shutil.copyfile(deadline_workflow_executor_file_path, assets_dir / "deadline_cloud_workflow_executor.py")
+            copy_executor_result = GriptapeNodes.handle_request(
+                CopyFileRequest(
+                    source_path=str(deadline_workflow_executor_file_path),
+                    destination_path=str(assets_dir / "deadline_cloud_workflow_executor.py"),
+                )
+            )
+            if not isinstance(copy_executor_result, CopyFileResultSuccess):
+                details = f"Failed to copy '{deadline_workflow_executor_file_path}' to '{assets_dir / 'deadline_cloud_workflow_executor.py'}'."
+                logger.error(details)
+                raise TypeError(details)  # noqa: TRY301
 
             # 2. Copy libraries
             library_paths = self._copy_libraries_to_path_for_workflow(
@@ -846,7 +1098,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
 
-            # 6. Generate Job Template
+            # 6. Gather and copy static file dependencies from FileSelector nodes
+            file_selector_nodes = self._gather_file_selector_nodes()
+            if file_selector_nodes:
+                self._resolve_and_copy_static_files(file_selector_nodes, assets_dir)
+
+            # 7. Write Deadline-specific project template (always, even without FileSelector nodes)
+            self._write_deadline_project_template(assets_dir)
+
+            # 8. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
                 job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
             )
