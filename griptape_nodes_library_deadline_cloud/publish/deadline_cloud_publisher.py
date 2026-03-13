@@ -69,7 +69,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
 )
 from huggingface_hub.constants import HF_HUB_CACHE
-from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, LIBRARY_NAME
+from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, DEADLINE_METADATA_DIR, LIBRARY_NAME
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
     DeadlineCloudJobTemplateGenerator,
@@ -97,8 +97,8 @@ logger = logging.getLogger("deadline_cloud_publisher")
 
 # FileSelector node detection constants
 FILE_SELECTOR_LIBRARY_NAME = "Griptape Nodes Library"
-FILE_SELECTOR_NODE_TYPE = "FileSelector"
-FILE_SELECTOR_PARAM_NAME = "selected_file"
+SELECT_FROM_PROJECT_NODE_TYPE = "SelectFromProject"
+SELECT_FROM_PROJECT_PARAM_NAME = "selected_path"
 
 
 class DeadlineCloudPublisher(BaseDeadlineCloud):
@@ -293,18 +293,18 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         for node in nodes:
             if (
                 node.metadata.get("library") != FILE_SELECTOR_LIBRARY_NAME
-                or node.metadata.get("node_type") != FILE_SELECTOR_NODE_TYPE
+                or node.metadata.get("node_type") != SELECT_FROM_PROJECT_NODE_TYPE
             ):
                 continue
 
             get_param_value_result = GriptapeNodes.handle_request(
-                GetParameterValueRequest(parameter_name=FILE_SELECTOR_PARAM_NAME, node_name=node.name)
+                GetParameterValueRequest(parameter_name=SELECT_FROM_PROJECT_PARAM_NAME, node_name=node.name)
             )
             if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
                 logger.warning(
                     "FileSelector node '%s' has no '%s' parameter value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
@@ -313,7 +313,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 logger.warning(
                     "FileSelector node '%s' has empty or non-string '%s' value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
@@ -410,7 +410,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             logger.info(
                 "Bundled static file for %s.%s: %s -> %s",
                 node_name,
-                FILE_SELECTOR_PARAM_NAME,
+                SELECT_FROM_PROJECT_PARAM_NAME,
                 macro_string,
                 resolved_relative_path,
             )
@@ -434,9 +434,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             )
             return
 
-        template = current_project_result.project_info.template
+        template = current_project_result.project_info.template.model_copy(deep=True)
 
-        # Write the template as-is — no situation or directory overrides needed.
+        # Override the metadata directory macro — dotfile folders (e.g. ".gtn")
+        # do not sync as job output on Deadline Cloud.
+        if "metadata" in template.directories:
+            template.directories["metadata"].path_macro = DEADLINE_METADATA_DIR
         static_files_dir = assets_dir / "static_files"
         static_files_dir.mkdir(parents=True, exist_ok=True)
         project_yaml = template.to_yaml()

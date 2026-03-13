@@ -291,4 +291,19 @@ if __name__ == "__main__":
         workflow_executor=workflow_runner,
         pickle_control_flow_result=pickle_result,
     )
+
+    # Debug: list all files in output_dir/outputs
+    _outputs_dir = output_dir / "outputs"
+    if _outputs_dir.exists():
+        logger.info("Listing all files in %s:", _outputs_dir)
+        for _root, _dirs, _files in os.walk(_outputs_dir):
+            # Include hidden dirs
+            _dirs[:] = sorted(_dirs)
+            _level = len(Path(_root).relative_to(_outputs_dir).parts)
+            _indent = "  " * _level
+            logger.info("%s%s/", _indent, Path(_root).name)
+            for _f in sorted(_files):
+                logger.info("%s  %s", _indent, _f)
+    else:
+        logger.info("outputs directory does not exist: %s", _outputs_dir)
 """

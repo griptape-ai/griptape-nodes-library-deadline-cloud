@@ -474,8 +474,8 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         )
         from publish.deadline_cloud_publisher import (
             FILE_SELECTOR_LIBRARY_NAME,
-            FILE_SELECTOR_NODE_TYPE,
-            FILE_SELECTOR_PARAM_NAME,
+            SELECT_FROM_PROJECT_NODE_TYPE,
+            SELECT_FROM_PROJECT_PARAM_NAME,
         )
 
         group_node_names = self._multi_task_config.group_node_names
@@ -492,18 +492,18 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
 
             if (
                 node.metadata.get("library") != FILE_SELECTOR_LIBRARY_NAME
-                or node.metadata.get("node_type") != FILE_SELECTOR_NODE_TYPE
+                or node.metadata.get("node_type") != SELECT_FROM_PROJECT_NODE_TYPE
             ):
                 continue
 
             get_param_value_result = GriptapeNodes.handle_request(
-                GetParameterValueRequest(parameter_name=FILE_SELECTOR_PARAM_NAME, node_name=node.name)
+                GetParameterValueRequest(parameter_name=SELECT_FROM_PROJECT_PARAM_NAME, node_name=node.name)
             )
             if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
                 logger.warning(
                     "FileSelector node '%s' has no '%s' parameter value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
@@ -512,7 +512,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 logger.warning(
                     "FileSelector node '%s' has empty or non-string '%s' value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
