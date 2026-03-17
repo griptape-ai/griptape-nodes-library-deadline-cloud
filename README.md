@@ -19,7 +19,7 @@ This library provides Griptape Nodes for interacting with AWS Deadline Cloud API
 To configure your settings within the Griptape Nodes IDE:
 
 1. Open the **Settings** menu.
-1. Navigate to the **Engine Settings** panel.
+1. Navigate to the **Library Settings** panel.
 1. Configure your:
    1. Default Farm ID
    1. Default Queue ID
