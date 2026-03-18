@@ -34,6 +34,7 @@ from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter 
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
 )
 from publish.parameters.deadline_cloud_job_submission_config_parameter import DeadlineCloudJobSubmissionConfigParameter
+from publish.utils import collect_metadata_sidecars, write_sidecar_output_files
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -434,8 +435,9 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         Walks the workflow output dictionary looking for parameter values that contain
         macro strings (e.g., "{outputs}/image.png"). For each, finds the corresponding
-        downloaded file in the temp directory and uses the File class to write it to
-        the correct local project location.
+        downloaded file in the temp directory and writes it to the correct local project
+        location. When metadata sidecar files are available, uses the situation name and
+        variables from the sidecar for proper situation-aware saving.
 
         Args:
             workflow_output: The workflow output dictionary (already path-translated).
@@ -452,10 +454,19 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                     relative_in_output = output_file[len(output_segment) + 1 :]
                     downloaded_files[relative_in_output] = Path(local_root) / output_file
 
+        # Collect metadata sidecars for situation-aware saving
+        metadata_sidecars = collect_metadata_sidecars(downloaded_files)
+
+        # Phase 1: Write files that have metadata sidecars using situation-aware saving.
+        # This handles collision policies correctly against the client's filesystem.
+        sidecar_written = write_sidecar_output_files(downloaded_files, metadata_sidecars)
+
+        # Phase 2: Walk the workflow output for any remaining macro-referenced files
+        # that were not covered by sidecars, and write them via direct macro resolution.
         def visit_value(value: Any) -> None:
             """Recursively visit values and write any macro-referenced files."""
             if isinstance(value, str) and "{" in value and "}" in value:
-                self._try_write_macro_file(value, downloaded_files)
+                self._try_write_macro_file(value, downloaded_files, sidecar_written)
             elif isinstance(value, dict):
                 for v in value.values():
                     visit_value(v)
@@ -465,16 +476,21 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
 
         visit_value(workflow_output)
 
-    def _try_write_macro_file(self, macro_string: str, downloaded_files: dict[str, Path]) -> None:
+    def _try_write_macro_file(
+        self,
+        macro_string: str,
+        downloaded_files: dict[str, Path],
+        sidecar_written: set[str],
+    ) -> None:
         """Try to write a macro-referenced file to the correct local project location.
 
-        Resolves the macro against the local project to determine the relative path,
-        finds the corresponding downloaded file, and uses the File class to write it
-        to the correct local project location.
+        Skips files that were already written via sidecar-based saving.
+        Falls back to resolving the macro directly for files without sidecars.
 
         Args:
             macro_string: A macro path string like "{outputs}/image.png".
             downloaded_files: Map of relative paths to their downloaded local paths.
+            sidecar_written: Set of relative paths already written via sidecar.
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.retained_mode.events.project_events import (
@@ -495,15 +511,26 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
         except Exception:
             return
 
-        # Find the corresponding downloaded file
+        # Skip if already written via sidecar
         relative_path = str(result.resolved_path)
+        if relative_path in sidecar_written:
+            return
+
+        # Find the corresponding downloaded file
         source_path = downloaded_files.get(relative_path)
         if source_path is None or not source_path.exists():
             return
 
-        # Read the downloaded file and write it via the File class to the local project
+        self._write_file_with_macro(source_path.read_bytes(), macro_string)
+
+    def _write_file_with_macro(self, file_bytes: bytes, macro_string: str) -> None:
+        """Write a file using the macro string directly (fallback path).
+
+        Args:
+            file_bytes: The file content to write.
+            macro_string: A macro path string like "{outputs}/image.png".
+        """
         try:
-            file_bytes = source_path.read_bytes()
             local_path = File(macro_string).write_bytes(file_bytes)
         except FileWriteError as e:
             logger.warning("Failed to write macro output '%s': %s", macro_string, e)

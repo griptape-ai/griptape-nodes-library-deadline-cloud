@@ -32,6 +32,7 @@ from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.deadline_cloud_job_poller import DeadlineCloudJobPoller
 from publish.deadline_cloud_multi_task_template_generator import DeadlineCloudMultiTaskJobTemplateGenerator
 from publish.deadline_cloud_publisher import DeadlineCloudPublisher
+from publish.utils import collect_metadata_sidecars, write_sidecar_output_files
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -474,8 +475,8 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         )
         from publish.deadline_cloud_publisher import (
             FILE_SELECTOR_LIBRARY_NAME,
-            FILE_SELECTOR_NODE_TYPE,
-            FILE_SELECTOR_PARAM_NAME,
+            SELECT_FROM_PROJECT_NODE_TYPE,
+            SELECT_FROM_PROJECT_PARAM_NAME,
         )
 
         group_node_names = self._multi_task_config.group_node_names
@@ -492,18 +493,18 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
 
             if (
                 node.metadata.get("library") != FILE_SELECTOR_LIBRARY_NAME
-                or node.metadata.get("node_type") != FILE_SELECTOR_NODE_TYPE
+                or node.metadata.get("node_type") != SELECT_FROM_PROJECT_NODE_TYPE
             ):
                 continue
 
             get_param_value_result = GriptapeNodes.handle_request(
-                GetParameterValueRequest(parameter_name=FILE_SELECTOR_PARAM_NAME, node_name=node.name)
+                GetParameterValueRequest(parameter_name=SELECT_FROM_PROJECT_PARAM_NAME, node_name=node.name)
             )
             if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
                 logger.warning(
                     "FileSelector node '%s' has no '%s' parameter value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
@@ -512,7 +513,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 logger.warning(
                     "FileSelector node '%s' has empty or non-string '%s' value, skipping.",
                     node.name,
-                    FILE_SELECTOR_PARAM_NAME,
+                    SELECT_FROM_PROJECT_PARAM_NAME,
                 )
                 continue
 
@@ -925,40 +926,61 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                     except Exception as e:
                         logger.warning("Failed to parse task output file %s: %s", output_file_path, e)
 
-        # Write any macro-referenced output files to the correct local project locations
+        # Write any macro-referenced output files to the correct local project locations.
+        # Collect metadata sidecars once (shared across all tasks).
+        downloaded_files = self._build_downloaded_files_lookup(output_paths_by_root)
+        metadata_sidecars = collect_metadata_sidecars(downloaded_files)
+        sidecar_written = write_sidecar_output_files(downloaded_files, metadata_sidecars)
+
         for task_result in results:
             if task_result is not None:
-                self._write_macro_output_files(task_result, output_paths_by_root)
+                self._write_macro_output_files(task_result, downloaded_files, sidecar_written)
 
         logger.info("Extracted results for %d/%d tasks", len([r for r in results if r is not None]), self.task_count)
         return results
 
-    def _write_macro_output_files(self, task_result: Any, output_paths_by_root: dict[str, list[str]]) -> None:
-        """Write macro-referenced output files to the correct local project locations.
-
-        Walks the task result looking for parameter values that contain macro strings
-        (e.g., "{outputs}/image.png"). For each, finds the corresponding downloaded file
-        and uses the File class to write it to the correct local project location.
+    def _build_downloaded_files_lookup(self, output_paths_by_root: dict[str, list[str]]) -> dict[str, Path]:
+        """Build a lookup of relative paths within the output dir to their full local paths.
 
         Args:
-            task_result: The task result (already path-translated).
             output_paths_by_root: A mapping of local root paths to their relative output file paths.
+
+        Returns:
+            Map of relative paths within the output dir to their full local paths.
         """
         output_dir_subdir = self._get_output_dir_subdir()
         output_segment = f"output/{output_dir_subdir}"
 
-        # Build a lookup of relative paths within the output dir to their full local paths
         downloaded_files: dict[str, Path] = {}
         for local_root, output_files in output_paths_by_root.items():
             for output_file in output_files:
                 if output_file.startswith(output_segment):
                     relative_in_output = output_file[len(output_segment) + 1 :]
                     downloaded_files[relative_in_output] = Path(local_root) / output_file
+        return downloaded_files
+
+    def _write_macro_output_files(
+        self,
+        task_result: Any,
+        downloaded_files: dict[str, Path],
+        sidecar_written: set[str],
+    ) -> None:
+        """Write macro-referenced output files to the correct local project locations.
+
+        Walks the task result looking for parameter values that contain macro strings
+        (e.g., "{outputs}/image.png"). Skips files already written via sidecar-based
+        saving and falls back to direct macro resolution for the rest.
+
+        Args:
+            task_result: The task result (already path-translated).
+            downloaded_files: Map of relative paths to their downloaded local paths.
+            sidecar_written: Set of relative paths already written via sidecar.
+        """
 
         def visit_value(value: Any) -> None:
             """Recursively visit values and write any macro-referenced files."""
             if isinstance(value, str) and "{" in value and "}" in value:
-                self._try_write_macro_file(value, downloaded_files)
+                self._try_write_macro_file(value, downloaded_files, sidecar_written)
             elif isinstance(value, dict):
                 for v in value.values():
                     visit_value(v)
@@ -968,12 +990,21 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
 
         visit_value(task_result)
 
-    def _try_write_macro_file(self, macro_string: str, downloaded_files: dict[str, Path]) -> None:
+    def _try_write_macro_file(
+        self,
+        macro_string: str,
+        downloaded_files: dict[str, Path],
+        sidecar_written: set[str],
+    ) -> None:
         """Try to write a macro-referenced file to the correct local project location.
+
+        Skips files that were already written via sidecar-based saving.
+        Falls back to resolving the macro directly for files without sidecars.
 
         Args:
             macro_string: A macro path string like "{outputs}/image.png".
             downloaded_files: Map of relative paths to their downloaded local paths.
+            sidecar_written: Set of relative paths already written via sidecar.
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
         from griptape_nodes.files.file import File, FileWriteError
@@ -993,7 +1024,12 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         except Exception:
             return
 
+        # Skip if already written via sidecar
         relative_path = str(result.resolved_path)
+        if relative_path in sidecar_written:
+            return
+
+        # Find the corresponding downloaded file
         source_path = downloaded_files.get(relative_path)
         if source_path is None or not source_path.exists():
             return
