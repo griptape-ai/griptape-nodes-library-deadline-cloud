@@ -108,7 +108,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
                 "name": "CondaPackages",
                 "type": "STRING",
                 "description": "Conda packages install job",
-                "default": "python=3.12",
+                "default": "python=3.12 pip",
             }
         )
 
