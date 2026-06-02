@@ -139,7 +139,7 @@ def write_sidecar_output_files(
 
         try:
             file_bytes = source_path.read_bytes()
-            dest = ProjectFileDestination(filename, situation_name, **extra_vars)
+            dest = ProjectFileDestination.from_situation(filename, situation_name, **extra_vars)
             result_file = dest.write_bytes(file_bytes)
         except Exception as e:
             logger.warning(
