@@ -1025,26 +1025,6 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
 
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
-                    parameter_name="dataset_config_path",
-                    node_name=node8_name,
-                    value=top_level_unique_values_dict["658fdcfd-2239-4479-8d56-50e9b4df08b8"],
-                    initial_setup=False,
-                    is_output=False,
-                )
-            )
-
-            GriptapeNodes.handle_request(
-                SetParameterValueRequest(
-                    parameter_name="output_dir",
-                    node_name=node8_name,
-                    value=top_level_unique_values_dict["1de7ea58-3cc4-4920-9fce-e1249cf3275c"],
-                    initial_setup=False,
-                    is_output=False,
-                )
-            )
-
-            GriptapeNodes.handle_request(
-                SetParameterValueRequest(
                     parameter_name="output_name",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["cdf4a83a-8809-419d-8870-a6d9ea0855ff"],
