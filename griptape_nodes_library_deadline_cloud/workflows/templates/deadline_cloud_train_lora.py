@@ -1028,7 +1028,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="dataset_config_path",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["658fdcfd-2239-4479-8d56-50e9b4df08b8"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1038,7 +1038,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="output_dir",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["1de7ea58-3cc4-4920-9fce-e1249cf3275c"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1048,7 +1048,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="output_name",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["cdf4a83a-8809-419d-8870-a6d9ea0855ff"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1058,7 +1058,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="learning_rate",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["851c044b-adeb-4f7a-9aae-9af57ae5060d"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1068,7 +1068,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="save_every_n_steps",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["67745344-ebf8-411b-a3a9-0304cca3bdaa"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1078,7 +1078,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="max_train_steps",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["3af14b1f-483b-42e8-bae0-f2e2da803c9c"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1088,7 +1088,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="network_dim",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["f9ae4817-4699-4795-891c-98c7b00bf322"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1098,7 +1098,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="network_alpha",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["c64e4ca1-8d68-4809-9ff4-545f74ab4634"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1108,7 +1108,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="mixed_precision",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["70ff63ff-ccda-414a-a4f1-2f88b59cf1bd"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1118,7 +1118,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="num_repeats",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["5886642b-ec99-4f5f-ac6e-29ed5287166a"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1128,7 +1128,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="randomize_seed",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["2403920b-dd5d-43f3-a29b-949ce23b3eab"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
@@ -1138,7 +1138,7 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
                     parameter_name="seed",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["92794cb3-1452-4477-b790-166ee0a93704"],
-                    initial_setup=True,
+                    initial_setup=False,
                     is_output=False,
                 )
             )
