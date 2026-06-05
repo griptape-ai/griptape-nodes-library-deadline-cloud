@@ -1006,15 +1006,6 @@ with GriptapeNodes.ContextManager().flow(flow0_name):
             )
             GriptapeNodes.handle_request(
                 SetParameterValueRequest(
-                    parameter_name="model_family",
-                    node_name=node8_name,
-                    value=top_level_unique_values_dict["442b70f4-0722-4e13-9726-89378c0d3856"],
-                    initial_setup=True,
-                    is_output=True,
-                )
-            )
-            GriptapeNodes.handle_request(
-                SetParameterValueRequest(
                     parameter_name="flux2_klein_model",
                     node_name=node8_name,
                     value=top_level_unique_values_dict["5ae39216-cf12-486d-9251-d26f629b9f2e"],
