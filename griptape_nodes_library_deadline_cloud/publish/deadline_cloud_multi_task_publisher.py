@@ -305,6 +305,10 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                             if dep.startswith("-e"):
                                 continue
                             req_file.write(f"{dep}\n")
+                    else:
+                        # Fallback: check for a sibling library JSON with deps
+                        # (handles no-deps variants used for local dev)
+                        self._write_deps_from_sibling_json(library_ref.library_name, req_file)
 
             # 7. Gather and copy static file dependencies from FileSelector nodes
             file_selector_nodes = self._gather_file_selector_nodes()
