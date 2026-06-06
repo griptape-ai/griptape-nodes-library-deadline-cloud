@@ -73,3 +73,41 @@ This method is useful if you have a workflow that would benefit from offloading 
 ### Templates
 
 For some examples on using the AWS Deadline Cloud Library, check out the [templates](./griptape_nodes_library_deadline_cloud/workflows/templates)!
+
+#### Train LoRA Template Prerequisites
+
+The `deadline_cloud_train_lora` template has additional requirements beyond the standard Deadline Cloud setup:
+
+**LoRA Training Library setup:**
+
+1. Install the [Griptape Nodes LoRA Training Library](https://github.com/griptape-ai/griptape-nodes-lora-training-library) in your engine, registered with the `griptape-nodes-library-cuda129.json` file for Deadline Cloud GPU compatibility. See the [LoRA Training Library README](https://github.com/griptape-ai/griptape-nodes-lora-training-library#readme) for installation instructions.
+2. Initialize the `sd-scripts` git submodule within the LoRA Training Library:
+   ```bash
+   cd <path-to-lora-training-library>
+   git submodule update --init --recursive
+   ```
+   **Why:** The Train LoRA node invokes training scripts from [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), which are included as a git submodule. When the Deadline Cloud publisher packages your workflow, it copies the library directory into the job bundle. If the submodule is not initialized, the `sd-scripts/` directory will be empty and the worker will fail with `Script not found: .../sd-scripts/flux_train_network.py`.
+
+**FLUX model download:**
+
+1. Download the FLUX.1 model to your local HuggingFace cache:
+   ```bash
+   huggingface-cli download black-forest-labs/FLUX.1-schnell
+   ```
+   **Why:** The Deadline Cloud publisher detects HuggingFace models referenced by nodes and uploads them as job attachments. On the worker, the `HF_HUB_CACHE` environment variable is set to the remapped model directory so the Train LoRA node can locate the model files. If the model is not downloaded locally, the publisher cannot upload it and the worker will fail with `Model download required!`.
+
+**Worker requirements:**
+
+1. Your Deadline Cloud queue must have a worker fleet with **GPU-equipped instances** (the template requests 1-2 GPUs).
+   **Why:** LoRA training uses `accelerate` with mixed-precision (bf16) and requires CUDA-capable GPUs to run the FLUX.1 training script.
+
+## Troubleshooting
+
+### "Failed to create Deadline Cloud client. Please ensure your AWS credentials are configured and refreshed."
+
+This means the library cannot authenticate with AWS. To resolve:
+
+1. **If using Deadline Cloud Monitor:** Open the Monitor app and ensure you are logged in. Credentials expire periodically and need to be refreshed.
+2. **If using an AWS profile:** Verify the `Profile name` in Library Settings matches a valid profile in `~/.aws/config`. You can test with: `aws sts get-caller-identity --profile <your-profile-name>`
+3. **If no credentials are configured:** Install the [Deadline Cloud Monitor](https://docs.aws.amazon.com/deadline-cloud/latest/userguide/submitter.html#install-deadline-cloud-monitor) and log in, or configure an AWS profile with `aws configure --profile <name>`.
+

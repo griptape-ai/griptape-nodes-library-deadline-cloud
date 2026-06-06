@@ -108,7 +108,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
                 "name": "CondaPackages",
                 "type": "STRING",
                 "description": "Conda packages install job",
-                "default": "python=3.12",
+                "default": "python=3.12 git",
             }
         )
 
@@ -238,7 +238,12 @@ if (job_assets_dir / ".env").exists():
     load_dotenv(str(job_assets_dir / ".env"))
 
 # Set HuggingFace hub cache directory for model cache, and print
-os.environ["HF_HUB_CACHE"] = str(Path(models_location_to_remap))
+_hf_cache = Path(models_location_to_remap)
+if not _hf_cache.exists() or not os.access(str(_hf_cache), os.W_OK):
+    _hf_cache = Path(location_to_remap) / "hf_cache"
+    _hf_cache.mkdir(parents=True, exist_ok=True)
+    logger.info("Models path not writable, using fallback: %s", _hf_cache)
+os.environ["HF_HUB_CACHE"] = str(_hf_cache)
 os.environ["GTN_CONFIG_WORKSPACE_DIRECTORY"] = str(output_dir)
 logger.info(f"HuggingFace model cache directory set to: {{os.environ['HF_HUB_CACHE']}}")
 logger.info(f"Griptape workspace directory set to: {{os.environ['GTN_CONFIG_WORKSPACE_DIRECTORY']}}")
