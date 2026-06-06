@@ -1026,8 +1026,8 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 pip_deps = deps.get("pip_dependencies", [])
                 if pip_deps:
                     pip_flags = deps.get("pip_install_flags", [])
-                    for flag in pip_flags:
-                        req_file.write(f"{flag}\n")
+                    if pip_flags:
+                        req_file.write(f"{' '.join(pip_flags)}\n")
                     for dep in pip_deps:
                         if dep.startswith("-e"):
                             continue
@@ -1146,8 +1146,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     deps = library_data.metadata.dependencies
                     if deps and deps.pip_dependencies:
                         if deps.pip_install_flags:
-                            for flag in deps.pip_install_flags:
-                                req_file.write(f"{flag}\n")
+                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
                         for dep in deps.pip_dependencies:
                             if dep.startswith("-e"):
                                 continue

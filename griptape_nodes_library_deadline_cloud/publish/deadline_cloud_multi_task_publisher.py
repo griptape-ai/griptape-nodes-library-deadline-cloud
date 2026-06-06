@@ -299,8 +299,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                     deps = library_data.metadata.dependencies
                     if deps and deps.pip_dependencies:
                         if deps.pip_install_flags:
-                            for flag in deps.pip_install_flags:
-                                req_file.write(f"{flag}\n")
+                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
                         for dep in deps.pip_dependencies:
                             if dep.startswith("-e"):
                                 continue
