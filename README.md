@@ -81,23 +81,14 @@ The `deadline_cloud_train_lora` template has additional requirements beyond the 
 **LoRA Training Library setup:**
 
 1. Install the [Griptape Nodes LoRA Training Library](https://github.com/griptape-ai/griptape-nodes-lora-training-library) in your engine, registered with the `griptape-nodes-library-cuda129.json` file for Deadline Cloud GPU compatibility. See the [LoRA Training Library README](https://github.com/griptape-ai/griptape-nodes-lora-training-library#readme) for installation instructions.
-2. **(FLUX.1 only)** Initialize the `sd-scripts` git submodule within the LoRA Training Library:
-   ```bash
-   cd <path-to-lora-training-library>
-   git submodule update --init --recursive
-   ```
-   **Why:** FLUX.1 training uses scripts from [kohya-ss/sd-scripts](https://github.com/kohya-ss/sd-scripts), included as a git submodule. If the submodule is not initialized, the worker will fail with `Script not found: .../sd-scripts/flux_train_network.py`. FLUX.2 Klein uses a standalone diffusers-based script bundled directly in the library, so this step is not needed for FLUX.2.
 
-**FLUX model download:**
+**FLUX.2 model download:**
 
-1. Download the FLUX model to your local HuggingFace cache:
+1. Download the FLUX.2 Klein model to your local HuggingFace cache:
    ```bash
-   # For FLUX.2 Klein:
    huggingface-cli download black-forest-labs/FLUX.2-Klein
-   # For FLUX.1:
-   huggingface-cli download black-forest-labs/FLUX.1-schnell
    ```
-   **Why:** The Deadline Cloud publisher detects HuggingFace models referenced by nodes and uploads them as job attachments. On the worker, the `HF_HUB_CACHE` environment variable is set to the remapped model directory so the Train LoRA node can locate the model files. If the model is not downloaded locally, the publisher cannot upload it and the worker will fail with `Model download required!`.
+   **Why:** The Deadline Cloud publisher uploads HuggingFace models from your local cache as job attachments. On the worker, `HF_HUB_CACHE` points to the remapped model directory so the training script can load the model via `from_pretrained()`. If the model is not cached locally, the publisher cannot upload it.
 
 **Worker requirements:**
 
