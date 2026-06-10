@@ -1140,6 +1140,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 req_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
+                # Libraries may be registered locally with a no-deps JSON variant
+                # (e.g. griptape-nodes-library-no-deps.json) to avoid installing heavy
+                # GPU dependencies on machines without NVIDIA hardware. When publishing
+                # to Deadline Cloud, the worker still needs those deps, so we fall back
+                # to a sibling JSON that declares the full pip_dependencies (e.g.
+                # griptape-nodes-library-cuda129.json in the same directory).
                 for library_ref in workflow.metadata.node_libraries_referenced:
                     lib = LibraryRegistry.get_library(library_ref.library_name)
                     library_data = lib.get_library_data()
