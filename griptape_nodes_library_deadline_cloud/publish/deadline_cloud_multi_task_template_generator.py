@@ -124,6 +124,18 @@ python -m pip install --upgrade pip wheel setuptools
 echo 'Installing dependencies...'
 pip install -r {{Param.LocationToRemap}}/assets/requirements.txt
 mkdir -p {{Param.LocationToRemap}}/output
+
+# Create .venv symlinks in libraries so library code that expects its own
+# venv (e.g. _get_library_env_python) finds a working Python with all deps.
+SESSION_PYTHON=$(which python)
+for lib_dir in {{Param.LocationToRemap}}/assets/libraries/*/; do
+    if [ -f "${lib_dir}griptape-nodes-library.json" ] || [ -f "${lib_dir}griptape-nodes-library-cuda129.json" ]; then
+        mkdir -p "${lib_dir}.venv/bin"
+        ln -sf "$SESSION_PYTHON" "${lib_dir}.venv/bin/python"
+        echo "Created .venv symlink in ${lib_dir}"
+    fi
+done
+
 echo 'Virtual environment setup complete.'
 """
 
