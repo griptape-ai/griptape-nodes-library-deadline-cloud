@@ -82,13 +82,9 @@ The `deadline_cloud_train_lora` template has additional requirements beyond the 
 
 1. Install the [Griptape Nodes LoRA Training Library](https://github.com/griptape-ai/griptape-nodes-lora-training-library) in your engine, registered with the `griptape-nodes-library-cuda129.json` file for Deadline Cloud GPU compatibility. See the [LoRA Training Library README](https://github.com/griptape-ai/griptape-nodes-lora-training-library#readme) for installation instructions.
 
-**FLUX.2 model download:**
+**FLUX.2 model:**
 
-1. Download the FLUX.2 Klein model to your local HuggingFace cache:
-   ```bash
-   huggingface-cli download black-forest-labs/FLUX.2-Klein
-   ```
-   **Why:** The Deadline Cloud publisher uploads HuggingFace models from your local cache as job attachments. On the worker, `HF_HUB_CACHE` points to the remapped model directory so the training script can load the model via `from_pretrained()`. If the model is not cached locally, the publisher cannot upload it.
+The FLUX.2 Klein model is downloaded directly from HuggingFace by the worker during training. The training script calls `from_pretrained("black-forest-labs/FLUX.2-klein-base-4B")` which downloads the model on first use. No local model download or upload as job attachment is required.
 
 **Worker requirements:**
 
