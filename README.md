@@ -90,5 +90,3 @@ The FLUX.2 Klein model is downloaded directly from HuggingFace by the worker dur
 
 1. Your Deadline Cloud queue must have a worker fleet with **GPU-equipped instances** (the template requests 1-2 GPUs).
    **Why:** LoRA training uses mixed-precision (bf16) and requires CUDA-capable GPUs.
-
-

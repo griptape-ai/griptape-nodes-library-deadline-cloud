@@ -192,7 +192,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         # Get libraries from node_dependencies
         return list(serialized_flow.node_dependencies.libraries)
 
-    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: PLR0915
+    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: C901, PLR0915
         """Package the workflow as a Deadline Cloud job bundle for multi-task execution.
 
         Args:

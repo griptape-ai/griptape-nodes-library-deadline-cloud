@@ -1048,7 +1048,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                         req_file.write(f"{dep}\n")
                     logger.info("Using pip_dependencies from '%s' for library '%s'", candidate.name, library_name)
                     return
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: S112
                 continue
 
     def _get_engine_version_for_workflow(self, workflow: Workflow) -> str:
@@ -1062,7 +1062,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
         return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
 
-    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: C901, PLR0912, PLR0915
         """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
