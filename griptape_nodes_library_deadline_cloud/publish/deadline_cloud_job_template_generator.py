@@ -81,7 +81,7 @@ class DeadlineCloudJobTemplateGenerator:
                 "name": "CondaPackages",
                 "type": "STRING",
                 "description": "Conda packages install job",
-                "default": "python=3.12 git",
+                "default": "python=3.12 pip git",
             }
         )
 

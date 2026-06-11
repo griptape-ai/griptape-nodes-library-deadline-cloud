@@ -519,8 +519,14 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
     def _ensure_workflow_file_saved(self, workflow_name: str, workflow: Workflow) -> None:
         """Ensure the workflow file exists on disk."""
-        full_workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
-        if not full_workflow_file_path.exists():
+        # An unsaved workflow has no file_path; treat it as not-yet-on-disk so the
+        # save path below runs and writes it out.
+        full_workflow_file_path = (
+            Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+            if workflow.file_path is not None
+            else None
+        )
+        if full_workflow_file_path is None or not full_workflow_file_path.exists():
             details = f"Workflow file '{full_workflow_file_path}' does not exist. Saving workflow file."
             logger.info(details)
             result = GriptapeNodes.handle_request(
@@ -534,8 +540,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 logger.error(details)
                 raise ValueError(details)
 
+            # Re-resolve from the saved workflow, which now has a file_path.
+            saved_workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+            full_workflow_file_path = (
+                Path(WorkflowRegistry.get_complete_file_path(saved_workflow.file_path))
+                if saved_workflow.file_path is not None
+                else None
+            )
+
             # Verify file was created
-            if not full_workflow_file_path.exists():
+            if full_workflow_file_path is None or not full_workflow_file_path.exists():
                 details = f"Workflow file '{full_workflow_file_path}' still does not exist after save attempt."
                 logger.error(details)
                 raise ValueError(details)
@@ -1069,6 +1083,10 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             local_publish_path = Path(__file__).parent
 
             # 1. Copy workflow and dependencies to assets
+            if workflow.file_path is None:
+                details = f"Workflow '{workflow_name}' has no file path on disk and cannot be packaged."
+                logger.error(details)
+                raise ValueError(details)  # noqa: TRY301
             full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
             copy_file_request = CopyFileRequest(
                 source_path=full_workflow_file_path,
