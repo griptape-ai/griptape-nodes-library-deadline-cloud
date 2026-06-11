@@ -192,7 +192,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         # Get libraries from node_dependencies
         return list(serialized_flow.node_dependencies.libraries)
 
-    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: PLR0915
+    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: C901, PLR0915
         """Package the workflow as a Deadline Cloud job bundle for multi-task execution.
 
         Args:
@@ -293,6 +293,21 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 req_file.write(
                     f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
                 )
+                for library_ref in node_libraries:
+                    lib = LibraryRegistry.get_library(library_ref.library_name)
+                    library_data = lib.get_library_data()
+                    deps = library_data.metadata.dependencies
+                    if deps and deps.pip_dependencies:
+                        if deps.pip_install_flags:
+                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
+                        for dep in deps.pip_dependencies:
+                            if dep.startswith("-e"):
+                                continue
+                            req_file.write(f"{dep}\n")
+                    else:
+                        # Fallback: check for a sibling library JSON with deps
+                        # (handles no-deps variants used for local dev)
+                        self._write_deps_from_sibling_json(library_ref.library_name, req_file)
 
             # 7. Gather and copy static file dependencies from FileSelector nodes
             file_selector_nodes = self._gather_file_selector_nodes()
