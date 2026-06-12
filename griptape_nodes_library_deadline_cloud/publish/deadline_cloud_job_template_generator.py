@@ -304,7 +304,6 @@ if __name__ == "__main__":
     )
     execute_workflow(
         input=flow_input,
-        storage_backend="local",
         workflow_executor=workflow_runner,
         pickle_control_flow_result=pickle_result,
     )
