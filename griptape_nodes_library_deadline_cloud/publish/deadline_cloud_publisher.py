@@ -1156,7 +1156,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
                 req_file.write(
-                    f"griptape-nodes @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
+                    f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes-engine.git@{engine_version}\n"
                 )
                 # Libraries may be registered locally with a no-deps JSON variant
                 # (e.g. griptape-nodes-library-no-deps.json) to avoid installing heavy
