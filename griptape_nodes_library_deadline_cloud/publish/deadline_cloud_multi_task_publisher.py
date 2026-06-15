@@ -291,7 +291,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
 
             with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
                 req_file.write(
-                    f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes.git@{engine_version}\n"
+                    f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes-engine.git@{engine_version}\n"
                 )
                 for library_ref in node_libraries:
                     lib = LibraryRegistry.get_library(library_ref.library_name)
