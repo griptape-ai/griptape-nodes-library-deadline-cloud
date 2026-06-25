@@ -69,7 +69,15 @@ class DeadlineCloudWorkflowBuilder:
             include fields supported by AddParameterToNodeRequest.
         """
         supported_fields = {f.name for f in fields(AddParameterToNodeRequest)}
-        param_config = {k: v for k, v in param.items() if k in supported_fields}
+        # These fields are always set explicitly by the generated script, so exclude
+        # them here to avoid passing the same keyword argument twice.
+        explicitly_set_fields = {
+            "mode_allowed_input",
+            "mode_allowed_property",
+            "mode_allowed_output",
+            "initial_setup",
+        }
+        param_config = {k: v for k, v in param.items() if k in supported_fields and k not in explicitly_set_fields}
         # Remap 'name' to 'parameter_name'
         if "name" in param:
             param_config["parameter_name"] = param["name"]
