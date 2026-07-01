@@ -28,11 +28,17 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY
 from publish.deadline_cloud_job_poller import DeadlineCloudJobPoller
 from publish.deadline_cloud_multi_task_template_generator import DeadlineCloudMultiTaskJobTemplateGenerator
 from publish.deadline_cloud_publisher import DeadlineCloudPublisher
-from publish.utils import collect_metadata_sidecars, write_sidecar_output_files
+from publish.utils import (
+    collect_metadata_sidecars,
+    collect_pip_install_flags,
+    write_library_deps,
+    write_sidecar_output_files,
+)
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -192,7 +198,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         # Get libraries from node_dependencies
         return list(serialized_flow.node_dependencies.libraries)
 
-    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: C901, PLR0915
+    def _package_multi_task_workflow(self, workflow_file_path: Path) -> str:  # noqa: PLR0915
         """Package the workflow as a Deadline Cloud job bundle for multi-task execution.
 
         Args:
@@ -289,6 +295,10 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
 
+            # uv-only install flags collected from referenced libraries; passed on
+            # the worker's `uv pip install` command line via PipInstallFlags rather
+            # than written into requirements.txt (which plain pip would reject).
+            pip_install_flags: list[str] = []
             with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
                 req_file.write(
                     f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes-engine.git@{engine_version}\n"
@@ -298,16 +308,13 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                     library_data = lib.get_library_data()
                     deps = library_data.metadata.dependencies
                     if deps and deps.pip_dependencies:
-                        if deps.pip_install_flags:
-                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
-                        for dep in deps.pip_dependencies:
-                            if dep.startswith("-e"):
-                                continue
-                            req_file.write(f"{dep}\n")
+                        write_library_deps(req_file, deps)
+                        lib_flags = collect_pip_install_flags([deps])
                     else:
                         # Fallback: check for a sibling library JSON with deps
                         # (handles no-deps variants used for local dev)
-                        self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                        lib_flags = self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                    pip_install_flags.extend(f for f in lib_flags if f not in pip_install_flags)
 
             # 7. Gather and copy static file dependencies from FileSelector nodes
             file_selector_nodes = self._gather_file_selector_nodes()
@@ -325,6 +332,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 task_count=self.task_count,
                 pickle_control_flow_result=self._multi_task_config.pickle_control_flow_result,
                 host_requirements=self._multi_task_config.host_requirements,
+                pip_install_flags=pip_install_flags,
             )
 
             logger.info("Multi-task job bundle created at: %s", job_bundle_dir)
@@ -488,6 +496,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
             GetParameterValueRequest,
             GetParameterValueResultSuccess,
         )
+
         from publish.deadline_cloud_publisher import (
             FILE_SELECTOR_LIBRARY_NAME,
             SELECT_FROM_PROJECT_NODE_TYPE,

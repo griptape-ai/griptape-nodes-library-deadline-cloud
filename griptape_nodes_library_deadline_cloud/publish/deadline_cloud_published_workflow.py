@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     CopyFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_poller import DeadlineCloudJobDetails, DeadlineCloudJobPoller
 from publish.parameters.deadline_cloud_host_config_parameter import DeadlineCloudHostConfigParameter
@@ -34,7 +35,7 @@ from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter 
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
 )
 from publish.parameters.deadline_cloud_job_submission_config_parameter import DeadlineCloudJobSubmissionConfigParameter
-from publish.utils import collect_metadata_sidecars, write_sidecar_output_files
+from publish.utils import collect_metadata_sidecars, ensure_conda_package, write_sidecar_output_files
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -633,9 +634,12 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
     @staticmethod
     def _ensure_conda_git(conda_packages: str) -> str:
         """Ensure git is included in conda packages (needed for pip git+ installs)."""
-        if "git" not in conda_packages.split():
-            conda_packages = f"{conda_packages} git"
-        return conda_packages
+        return ensure_conda_package(conda_packages, "git")
+
+    @staticmethod
+    def _ensure_conda_uv(conda_packages: str) -> str:
+        """Ensure uv is included in conda packages (the worker installs deps with uv)."""
+        return ensure_conda_package(conda_packages, "uv")
 
     def _reconcile_job_template(self, job_template: dict[str, Any]) -> dict[str, Any]:
         """Reconcile the job template with the parameters."""
@@ -849,7 +853,9 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                 "ModelsLocationToRemap": {"path": models_dir_path},
                 "OutputDir": {"string": output_dir_subdir},
                 "CondaChannels": {"string": self.get_parameter_value("conda_channels")},
-                "CondaPackages": {"string": self._ensure_conda_git(self.get_parameter_value("conda_packages"))},
+                "CondaPackages": {
+                    "string": self._ensure_conda_uv(self._ensure_conda_git(self.get_parameter_value("conda_packages")))
+                },
             }
 
             job_template = self._reconcile_job_template(job_template)
