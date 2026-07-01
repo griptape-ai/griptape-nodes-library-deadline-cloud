@@ -69,6 +69,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
 )
 from huggingface_hub.constants import HF_HUB_CACHE
+
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, LIBRARY_NAME
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
@@ -78,7 +79,7 @@ from publish.deadline_cloud_workflow_builder import (
     DeadlineCloudWorkflowBuilder,
     DeadlineCloudWorkflowBuilderInput,
 )
-from publish.utils import get_metadata_dir_name
+from publish.utils import collect_pip_install_flags, get_metadata_dir_name, write_library_deps
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,6 +88,7 @@ if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
     from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 
@@ -1013,16 +1015,20 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         for key, val in env_file_dict.items():
             set_key(env_file_path, key, str(val))
 
-    def _write_deps_from_sibling_json(self, library_name: str, req_file: Any) -> None:
+    def _write_deps_from_sibling_json(self, library_name: str, req_file: Any) -> list[str]:
         """Look for a sibling library JSON with pip_dependencies.
 
         When a library is registered with a no-deps variant, look for the full
         version (e.g. griptape-nodes-library.json or *-cuda*.json) in the same
         directory to get the actual pip_dependencies for remote execution.
+
+        Returns the sibling's ``pip_install_flags`` (uv-only flags) so the caller
+        can pass them on the ``uv pip install`` command line rather than writing
+        them into requirements.txt (which plain pip would reject).
         """
         library = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
         if library is None or not library.library_path.endswith(".json"):
-            return
+            return []
 
         library_json_path = Path(library.library_path).resolve()
         library_dir = library_json_path.parent
@@ -1039,17 +1045,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 deps = data.get("metadata", {}).get("dependencies", {})
                 pip_deps = deps.get("pip_dependencies", [])
                 if pip_deps:
-                    pip_flags = deps.get("pip_install_flags", [])
-                    if pip_flags:
-                        req_file.write(f"{' '.join(pip_flags)}\n")
                     for dep in pip_deps:
                         if dep.startswith("-e"):
                             continue
                         req_file.write(f"{dep}\n")
                     logger.info("Using pip_dependencies from '%s' for library '%s'", candidate.name, library_name)
-                    return
+                    return deps.get("pip_install_flags", []) or []
             except Exception:  # noqa: S112
                 continue
+        return []
 
     def _get_engine_version_for_workflow(self, workflow: Workflow) -> str:
         # Get engine version for dependencies
@@ -1062,7 +1066,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
         return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
 
-    def _package_workflow(self, workflow_name: str) -> str:  # noqa: C901, PLR0912, PLR0915
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: C901, PLR0915
         """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
@@ -1154,6 +1158,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
 
+            # uv-only install flags (e.g. --preview, --torch-backend=auto) collected
+            # from referenced libraries. These are passed on the worker's
+            # `uv pip install` command line via the PipInstallFlags job parameter,
+            # not written into requirements.txt (which plain pip would reject).
+            pip_install_flags: list[str] = []
             with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
                 req_file.write(
                     f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes-engine.git@{engine_version}\n"
@@ -1169,14 +1178,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     library_data = lib.get_library_data()
                     deps = library_data.metadata.dependencies
                     if deps and deps.pip_dependencies:
-                        if deps.pip_install_flags:
-                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
-                        for dep in deps.pip_dependencies:
-                            if dep.startswith("-e"):
-                                continue
-                            req_file.write(f"{dep}\n")
+                        write_library_deps(req_file, deps)
+                        lib_flags = collect_pip_install_flags([deps])
                     else:
-                        self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                        lib_flags = self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                    pip_install_flags.extend(f for f in lib_flags if f not in pip_install_flags)
 
             # 6. Gather and copy static file dependencies from FileSelector nodes
             file_selector_nodes = self._gather_file_selector_nodes()
@@ -1188,7 +1194,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # 8. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
-                job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
+                job_bundle_dir,
+                workflow_name,
+                library_paths,
+                pickle_control_flow_result=self.pickle_control_flow_result,
+                pip_install_flags=pip_install_flags,
             )
 
             logger.info("Job bundle created at: %s", job_bundle_dir)
