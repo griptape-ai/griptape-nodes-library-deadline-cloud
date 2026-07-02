@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from urllib.request import url2pathname
 
 import semver
 from botocore.exceptions import BotoCoreError, ClientError
@@ -21,6 +22,7 @@ from dotenv import set_key
 from dotenv.main import DotEnv
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.exe_types.node_types import BaseNode, StartNode
+from griptape_nodes.files.path_utils import _apply_windows_long_path_prefix
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -695,6 +697,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
         Uses absolute() instead of resolve() to avoid symlink resolution issues,
         matching the behavior of Deadline Cloud's job attachments system.
+
+        On Windows, walks each input directory with the ``\\?\`` long-path
+        prefix applied to the walk root, so ``os.walk`` can descend into and
+        stat files whose absolute paths exceed MAX_PATH (260 chars). The prefix
+        is stripped from the returned paths so downstream Deadline SDK / boto3
+        code sees plain paths.
         """
         expanded_paths: list[str] = []
 
@@ -702,22 +710,28 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             # Use absolute() instead of resolve() to avoid symlink issues (e.g., /var vs /private/var on macOS)
             # Then normalize to clean up relative paths like '..'
             path = Path(os.path.normpath(Path(path_str).absolute()))
-            if path.exists():
-                if path.is_dir():
-                    expanded_paths.extend(
-                        [
-                            str(os.path.normpath(file_path.absolute()))
-                            for file_path in path.glob("**/*")
-                            if not file_path.is_dir()
-                            and file_path.exists()
-                            and "__pycache__" not in str(file_path)
-                            and ".venv" not in str(file_path)
-                        ]
-                    )
-                else:
-                    expanded_paths.append(str(path))
-            else:
+            if not path.exists():
                 logger.warning("Path does not exist and will be skipped: %s", path)
+                continue
+            if not path.is_dir():
+                expanded_paths.append(str(path))
+                continue
+            # Walk from the long-path-prefixed root so descent doesn't silently
+            # drop files whose absolute paths exceed Windows MAX_PATH.
+            walk_root = _apply_windows_long_path_prefix(str(path))
+            walk_root_len = len(walk_root)
+            plain_root_str = str(path)
+            for root, dirs, files in os.walk(walk_root):
+                # Prune ignored directories in place so os.walk skips descending.
+                dirs[:] = [d for d in dirs if d != "__pycache__" and d != ".venv"]
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    # Strip the long-path prefix so downstream (Deadline SDK,
+                    # boto3) sees a plain path; keep the input dir's original
+                    # (unprefixed) prefix untouched.
+                    if walk_root != plain_root_str and file_path.startswith(walk_root):
+                        file_path = plain_root_str + file_path[walk_root_len:]
+                    expanded_paths.append(os.path.normpath(file_path))
 
         logger.info("Expanded %d file paths", len(expanded_paths))
         return expanded_paths
@@ -900,14 +914,14 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         return library_paths
 
     def _find_griptape_nodes_distribution(self) -> importlib.metadata.Distribution | None:
-        """Find the griptape_nodes distribution from the current executable's venv.
+        """Find the griptape-nodes-engine distribution from the current executable's venv.
 
         Uses sys.executable to derive the venv site-packages path, scoping the
         search to avoid picking up distributions from other venvs that may have
         leaked onto sys.path via dynamic library loading.
 
         Returns:
-            The Distribution object for griptape_nodes, or None if not found.
+            The Distribution object for griptape-nodes-engine, or None if not found.
         """
         import sys
 
@@ -920,19 +934,19 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         if not site_packages.exists():
             logger.info("Venv site-packages not found at %s, falling back to default lookup", site_packages)
             try:
-                return importlib.metadata.distribution("griptape_nodes")
+                return importlib.metadata.distribution("griptape-nodes-engine")
             except importlib.metadata.PackageNotFoundError:
                 return None
 
-        logger.info("Searching for griptape_nodes in venv site-packages: %s", site_packages)
+        logger.info("Searching for griptape-nodes-engine in venv site-packages: %s", site_packages)
         for dist in importlib.metadata.distributions(path=[str(site_packages)]):
-            if dist.metadata["Name"] == "griptape-nodes":
-                logger.info("Found griptape_nodes at %s", dist.locate_file(""))
+            if dist.metadata["Name"] == "griptape-nodes-engine":
+                logger.info("Found griptape-nodes-engine at %s", dist.locate_file(""))
                 return dist
 
-        logger.info("griptape_nodes not found in venv site-packages, falling back to default lookup")
+        logger.info("griptape-nodes-engine not found in venv site-packages, falling back to default lookup")
         try:
-            return importlib.metadata.distribution("griptape_nodes")
+            return importlib.metadata.distribution("griptape-nodes-engine")
         except importlib.metadata.PackageNotFoundError:
             return None
 
@@ -957,10 +971,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         url = direct_url_info.get("url")
         logger.info("griptape_nodes install URL: %s", url)
         if url.startswith("file://"):
+            # Anchor the git-root walk on the source path from direct_url.json,
+            # not dist.locate_file(""). With uv-managed editable installs, the
+            # dist's on-disk location is a build-cache dir (e.g.
+            # AppData/Local/uv/cache/archive-v0/...) that has no .git ancestor,
+            # so walking from it always fails and we misclassify as "file".
+            src_path_str = url2pathname(urlparse(url).path)
+            src_path = Path(src_path_str).resolve()
+            logger.info("Package source directory (from direct_url.json): %s", src_path)
             try:
-                pkg_dir = Path(str(dist.locate_file(""))).resolve()
-                logger.info("Package directory: %s", pkg_dir)
-                git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
+                git_root = next(p for p in (src_path, *src_path.parents) if (p / ".git").is_dir())
                 logger.info("Git root found: %s", git_root)
                 commit = (
                     subprocess.check_output(
@@ -1075,8 +1095,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         # Get engine version for dependencies
         engine_version = self._get_engine_version_for_workflow(workflow)
 
-        # Create temporary directory for packaging
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"{workflow_name}_deadline_bundle_"))
+        # Create temporary directory for packaging.
+        # Use a short prefix ("gtn-dc-") instead of "{workflow_name}_deadline_bundle_"
+        # so the bundle root stays short. On Windows, the Deadline SDK's job-attachments
+        # upload code stats input paths without applying the \\?\ long-path prefix
+        # (deadline.job_attachments.upload._FileStatCache._get_stat as of
+        # deadline-job-attachments 0.1.1 / deadline 0.59.1), so paths >260 chars are
+        # silently marked as non-existent and demoted to "referenced_paths" — never
+        # uploaded to S3. Shortening the root buys headroom to keep every leaf under
+        # MAX_PATH inside a typical library tree.
+        temp_dir = Path(tempfile.mkdtemp(prefix="gtn-dc-"))
         job_bundle_dir = temp_dir
         assets_dir = job_bundle_dir / "assets"
 

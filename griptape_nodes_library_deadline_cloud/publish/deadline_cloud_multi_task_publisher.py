@@ -210,8 +210,13 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
         config_manager = GriptapeNodes.ConfigManager()
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
 
-        # Create temporary directory for packaging
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"{self._multi_task_config.workflow_name}_multi_task_bundle_"))
+        # Create temporary directory for packaging.
+        # Use a short prefix ("gtn-dc-mt-") instead of
+        # "{workflow_name}_multi_task_bundle_" so the bundle root stays short.
+        # See _package_workflow in deadline_cloud_publisher for the full reason:
+        # the Deadline SDK stats input paths without the Windows long-path prefix
+        # and silently drops paths >260 chars from the upload set.
+        temp_dir = Path(tempfile.mkdtemp(prefix="gtn-dc-mt-"))
         job_bundle_dir = temp_dir
         assets_dir = job_bundle_dir / "assets"
         inputs_dir = assets_dir / "inputs"
