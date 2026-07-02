@@ -693,12 +693,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
     @classmethod
     def expand_directories_to_files(cls, paths: list[str]) -> list[str]:
-        """Expand directories in the list of paths to individual file paths.
+        r"""Expand directories in the list of paths to individual file paths.
 
         Uses absolute() instead of resolve() to avoid symlink resolution issues,
         matching the behavior of Deadline Cloud's job attachments system.
 
-        On Windows, walks each input directory with the ``\\?\`` long-path
+        On Windows, walks each input directory with the ``\\?\\`` long-path
         prefix applied to the walk root, so ``os.walk`` can descend into and
         stat files whose absolute paths exceed MAX_PATH (260 chars). The prefix
         is stripped from the returned paths so downstream Deadline SDK / boto3
@@ -723,9 +723,12 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             plain_root_str = str(path)
             for root, dirs, files in os.walk(walk_root):
                 # Prune ignored directories in place so os.walk skips descending.
-                dirs[:] = [d for d in dirs if d != "__pycache__" and d != ".venv"]
+                dirs[:] = [d for d in dirs if d not in {"__pycache__", ".venv"}]
                 for file_name in files:
-                    file_path = os.path.join(root, file_name)
+                    # Join as plain strings (not pathlib) to preserve the
+                    # ``\\?\`` long-path prefix on the walk root; pathlib may
+                    # normalize the prefix away and break the strip below.
+                    file_path = os.path.join(root, file_name)  # noqa: PTH118
                     # Strip the long-path prefix so downstream (Deadline SDK,
                     # boto3) sees a plain path; keep the input dir's original
                     # (unprefixed) prefix untouched.
