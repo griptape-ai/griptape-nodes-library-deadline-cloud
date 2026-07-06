@@ -8,7 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from urllib.request import url2pathname
 
 import semver
 from botocore.exceptions import BotoCoreError, ClientError
@@ -21,6 +22,7 @@ from dotenv import set_key
 from dotenv.main import DotEnv
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.exe_types.node_types import BaseNode, StartNode
+from griptape_nodes.files.path_utils import _apply_windows_long_path_prefix
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import Workflow, WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
@@ -69,6 +71,7 @@ from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
 )
 from huggingface_hub.constants import HF_HUB_CACHE
+
 from publish import DEADLINE_CLOUD_LIBRARY_CONFIG_KEY, LIBRARY_NAME
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_job_template_generator import (
@@ -78,7 +81,7 @@ from publish.deadline_cloud_workflow_builder import (
     DeadlineCloudWorkflowBuilder,
     DeadlineCloudWorkflowBuilderInput,
 )
-from publish.utils import get_metadata_dir_name
+from publish.utils import collect_pip_install_flags, get_metadata_dir_name, write_library_deps
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,6 +90,7 @@ if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
     from publish.deadline_cloud_start_flow import DeadlineCloudStartFlow
 
 
@@ -689,10 +693,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
     @classmethod
     def expand_directories_to_files(cls, paths: list[str]) -> list[str]:
-        """Expand directories in the list of paths to individual file paths.
+        r"""Expand directories in the list of paths to individual file paths.
 
         Uses absolute() instead of resolve() to avoid symlink resolution issues,
         matching the behavior of Deadline Cloud's job attachments system.
+
+        On Windows, walks each input directory with the ``\\?\\`` long-path
+        prefix applied to the walk root, so ``os.walk`` can descend into and
+        stat files whose absolute paths exceed MAX_PATH (260 chars). The prefix
+        is stripped from the returned paths so downstream Deadline SDK / boto3
+        code sees plain paths.
         """
         expanded_paths: list[str] = []
 
@@ -700,22 +710,31 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             # Use absolute() instead of resolve() to avoid symlink issues (e.g., /var vs /private/var on macOS)
             # Then normalize to clean up relative paths like '..'
             path = Path(os.path.normpath(Path(path_str).absolute()))
-            if path.exists():
-                if path.is_dir():
-                    expanded_paths.extend(
-                        [
-                            str(os.path.normpath(file_path.absolute()))
-                            for file_path in path.glob("**/*")
-                            if not file_path.is_dir()
-                            and file_path.exists()
-                            and "__pycache__" not in str(file_path)
-                            and ".venv" not in str(file_path)
-                        ]
-                    )
-                else:
-                    expanded_paths.append(str(path))
-            else:
+            if not path.exists():
                 logger.warning("Path does not exist and will be skipped: %s", path)
+                continue
+            if not path.is_dir():
+                expanded_paths.append(str(path))
+                continue
+            # Walk from the long-path-prefixed root so descent doesn't silently
+            # drop files whose absolute paths exceed Windows MAX_PATH.
+            walk_root = _apply_windows_long_path_prefix(str(path))
+            walk_root_len = len(walk_root)
+            plain_root_str = str(path)
+            for root, dirs, files in os.walk(walk_root):
+                # Prune ignored directories in place so os.walk skips descending.
+                dirs[:] = [d for d in dirs if d not in {"__pycache__", ".venv"}]
+                for file_name in files:
+                    # Join as plain strings (not pathlib) to preserve the
+                    # ``\\?\`` long-path prefix on the walk root; pathlib may
+                    # normalize the prefix away and break the strip below.
+                    file_path = os.path.join(root, file_name)  # noqa: PTH118
+                    # Strip the long-path prefix so downstream (Deadline SDK,
+                    # boto3) sees a plain path; keep the input dir's original
+                    # (unprefixed) prefix untouched.
+                    if walk_root != plain_root_str and file_path.startswith(walk_root):
+                        file_path = plain_root_str + file_path[walk_root_len:]
+                    expanded_paths.append(os.path.normpath(file_path))
 
         logger.info("Expanded %d file paths", len(expanded_paths))
         return expanded_paths
@@ -898,14 +917,14 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         return library_paths
 
     def _find_griptape_nodes_distribution(self) -> importlib.metadata.Distribution | None:
-        """Find the griptape_nodes distribution from the current executable's venv.
+        """Find the griptape-nodes-engine distribution from the current executable's venv.
 
         Uses sys.executable to derive the venv site-packages path, scoping the
         search to avoid picking up distributions from other venvs that may have
         leaked onto sys.path via dynamic library loading.
 
         Returns:
-            The Distribution object for griptape_nodes, or None if not found.
+            The Distribution object for griptape-nodes-engine, or None if not found.
         """
         import sys
 
@@ -918,19 +937,19 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         if not site_packages.exists():
             logger.info("Venv site-packages not found at %s, falling back to default lookup", site_packages)
             try:
-                return importlib.metadata.distribution("griptape_nodes")
+                return importlib.metadata.distribution("griptape-nodes-engine")
             except importlib.metadata.PackageNotFoundError:
                 return None
 
-        logger.info("Searching for griptape_nodes in venv site-packages: %s", site_packages)
+        logger.info("Searching for griptape-nodes-engine in venv site-packages: %s", site_packages)
         for dist in importlib.metadata.distributions(path=[str(site_packages)]):
-            if dist.metadata["Name"] == "griptape-nodes":
-                logger.info("Found griptape_nodes at %s", dist.locate_file(""))
+            if dist.metadata["Name"] == "griptape-nodes-engine":
+                logger.info("Found griptape-nodes-engine at %s", dist.locate_file(""))
                 return dist
 
-        logger.info("griptape_nodes not found in venv site-packages, falling back to default lookup")
+        logger.info("griptape-nodes-engine not found in venv site-packages, falling back to default lookup")
         try:
-            return importlib.metadata.distribution("griptape_nodes")
+            return importlib.metadata.distribution("griptape-nodes-engine")
         except importlib.metadata.PackageNotFoundError:
             return None
 
@@ -955,10 +974,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         url = direct_url_info.get("url")
         logger.info("griptape_nodes install URL: %s", url)
         if url.startswith("file://"):
+            # Anchor the git-root walk on the source path from direct_url.json,
+            # not dist.locate_file(""). With uv-managed editable installs, the
+            # dist's on-disk location is a build-cache dir (e.g.
+            # AppData/Local/uv/cache/archive-v0/...) that has no .git ancestor,
+            # so walking from it always fails and we misclassify as "file".
+            src_path_str = url2pathname(urlparse(url).path)
+            src_path = Path(src_path_str).resolve()
+            logger.info("Package source directory (from direct_url.json): %s", src_path)
             try:
-                pkg_dir = Path(str(dist.locate_file(""))).resolve()
-                logger.info("Package directory: %s", pkg_dir)
-                git_root = next(p for p in (pkg_dir, *pkg_dir.parents) if (p / ".git").is_dir())
+                git_root = next(p for p in (src_path, *src_path.parents) if (p / ".git").is_dir())
                 logger.info("Git root found: %s", git_root)
                 commit = (
                     subprocess.check_output(
@@ -1013,16 +1038,20 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         for key, val in env_file_dict.items():
             set_key(env_file_path, key, str(val))
 
-    def _write_deps_from_sibling_json(self, library_name: str, req_file: Any) -> None:
+    def _write_deps_from_sibling_json(self, library_name: str, req_file: Any) -> list[str]:
         """Look for a sibling library JSON with pip_dependencies.
 
         When a library is registered with a no-deps variant, look for the full
         version (e.g. griptape-nodes-library.json or *-cuda*.json) in the same
         directory to get the actual pip_dependencies for remote execution.
+
+        Returns the sibling's ``pip_install_flags`` (uv-only flags) so the caller
+        can pass them on the ``uv pip install`` command line rather than writing
+        them into requirements.txt (which plain pip would reject).
         """
         library = GriptapeNodes.LibraryManager().get_library_info_by_library_name(library_name)
         if library is None or not library.library_path.endswith(".json"):
-            return
+            return []
 
         library_json_path = Path(library.library_path).resolve()
         library_dir = library_json_path.parent
@@ -1039,17 +1068,15 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                 deps = data.get("metadata", {}).get("dependencies", {})
                 pip_deps = deps.get("pip_dependencies", [])
                 if pip_deps:
-                    pip_flags = deps.get("pip_install_flags", [])
-                    if pip_flags:
-                        req_file.write(f"{' '.join(pip_flags)}\n")
                     for dep in pip_deps:
                         if dep.startswith("-e"):
                             continue
                         req_file.write(f"{dep}\n")
                     logger.info("Using pip_dependencies from '%s' for library '%s'", candidate.name, library_name)
-                    return
+                    return deps.get("pip_install_flags", []) or []
             except Exception:  # noqa: S112
                 continue
+        return []
 
     def _get_engine_version_for_workflow(self, workflow: Workflow) -> str:
         # Get engine version for dependencies
@@ -1062,7 +1089,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         engine_version_success = cast("GetEngineVersionResultSuccess", engine_version_result)
         return f"v{engine_version_success.major}.{engine_version_success.minor}.{engine_version_success.patch}"
 
-    def _package_workflow(self, workflow_name: str) -> str:  # noqa: C901, PLR0912, PLR0915
+    def _package_workflow(self, workflow_name: str) -> str:  # noqa: C901, PLR0915
         """Package workflow as a Deadline Cloud job bundle with Open Job Description template."""
         config_manager = GriptapeNodes.get_instance()._config_manager
         secrets_manager = GriptapeNodes.get_instance()._secrets_manager
@@ -1071,8 +1098,16 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         # Get engine version for dependencies
         engine_version = self._get_engine_version_for_workflow(workflow)
 
-        # Create temporary directory for packaging
-        temp_dir = Path(tempfile.mkdtemp(prefix=f"{workflow_name}_deadline_bundle_"))
+        # Create temporary directory for packaging.
+        # Use a short prefix ("gtn-dc-") instead of "{workflow_name}_deadline_bundle_"
+        # so the bundle root stays short. On Windows, the Deadline SDK's job-attachments
+        # upload code stats input paths without applying the \\?\ long-path prefix
+        # (deadline.job_attachments.upload._FileStatCache._get_stat as of
+        # deadline-job-attachments 0.1.1 / deadline 0.59.1), so paths >260 chars are
+        # silently marked as non-existent and demoted to "referenced_paths" — never
+        # uploaded to S3. Shortening the root buys headroom to keep every leaf under
+        # MAX_PATH inside a typical library tree.
+        temp_dir = Path(tempfile.mkdtemp(prefix="gtn-dc-"))
         job_bundle_dir = temp_dir
         assets_dir = job_bundle_dir / "assets"
 
@@ -1154,6 +1189,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             if source == "git" and commit_id is not None:
                 engine_version = commit_id
 
+            # uv-only install flags (e.g. --preview, --torch-backend=auto) collected
+            # from referenced libraries. These are passed on the worker's
+            # `uv pip install` command line via the PipInstallFlags job parameter,
+            # not written into requirements.txt (which plain pip would reject).
+            pip_install_flags: list[str] = []
             with (assets_dir / "requirements.txt").open("w", encoding="utf-8") as req_file:
                 req_file.write(
                     f"griptape-nodes-engine @ git+https://github.com/griptape-ai/griptape-nodes-engine.git@{engine_version}\n"
@@ -1169,14 +1209,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     library_data = lib.get_library_data()
                     deps = library_data.metadata.dependencies
                     if deps and deps.pip_dependencies:
-                        if deps.pip_install_flags:
-                            req_file.write(f"{' '.join(deps.pip_install_flags)}\n")
-                        for dep in deps.pip_dependencies:
-                            if dep.startswith("-e"):
-                                continue
-                            req_file.write(f"{dep}\n")
+                        write_library_deps(req_file, deps)
+                        lib_flags = collect_pip_install_flags([deps])
                     else:
-                        self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                        lib_flags = self._write_deps_from_sibling_json(library_ref.library_name, req_file)
+                    pip_install_flags.extend(f for f in lib_flags if f not in pip_install_flags)
 
             # 6. Gather and copy static file dependencies from FileSelector nodes
             file_selector_nodes = self._gather_file_selector_nodes()
@@ -1188,7 +1225,11 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
             # 8. Generate Job Template
             self._job_template = DeadlineCloudJobTemplateGenerator.generate_job_template(
-                job_bundle_dir, workflow_name, library_paths, pickle_control_flow_result=self.pickle_control_flow_result
+                job_bundle_dir,
+                workflow_name,
+                library_paths,
+                pickle_control_flow_result=self.pickle_control_flow_result,
+                pip_install_flags=pip_install_flags,
             )
 
             logger.info("Job bundle created at: %s", job_bundle_dir)

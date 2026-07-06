@@ -3,6 +3,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+
 from publish.base_deadline_cloud import BaseDeadlineCloud
 from publish.deadline_cloud_resource_options import DeadlineCloudResourceOptions
 
@@ -140,7 +141,7 @@ class DeadlineCloudJobSubmissionConfigAdvancedParameter(BaseDeadlineCloud):
                 name="conda_packages",
                 input_types=["str"],
                 type="str",
-                default_value="python=3.12 git",
+                default_value="python=3.12 pip git uv",
                 output_type="str",
                 tooltip="Conda packages install job.",
                 allowed_modes=allowed_modes,

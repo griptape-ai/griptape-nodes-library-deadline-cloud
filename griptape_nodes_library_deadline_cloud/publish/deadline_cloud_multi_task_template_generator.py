@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from publish.utils import build_venv_script
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -35,6 +37,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
         *,
         pickle_control_flow_result: bool = False,
         host_requirements: dict[str, Any] | None = None,
+        pip_install_flags: list[str] | None = None,
     ) -> dict[str, Any]:
         """Generate Open Job Description template for a multi-task workflow.
 
@@ -45,6 +48,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
             task_count: Number of tasks to create (one per iteration item)
             pickle_control_flow_result: Whether to pickle control flow results
             host_requirements: Optional host requirements dict with 'amounts' and/or 'attributes'
+            pip_install_flags: uv-only install flags collected from referenced libraries
 
         Returns:
             The generated job template dictionary
@@ -108,7 +112,16 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
                 "name": "CondaPackages",
                 "type": "STRING",
                 "description": "Conda packages install job",
-                "default": "python=3.12 pip git",
+                "default": "python=3.12 pip git uv",
+            }
+        )
+
+        parameter_definitions.append(
+            {
+                "name": "PipInstallFlags",
+                "type": "STRING",
+                "description": "uv-only install flags (e.g. --torch-backend=auto) from referenced libraries",
+                "default": " ".join(pip_install_flags or []),
             }
         )
 
@@ -117,27 +130,7 @@ class DeadlineCloudMultiTaskJobTemplateGenerator:
             library_paths, pickle_control_flow_result=pickle_control_flow_result
         )
 
-        venv_script = """#!/bin/env bash
-set -e
-echo 'Setting up Python virtual environment...'
-python -m pip install --upgrade pip wheel setuptools
-echo 'Installing dependencies...'
-pip install -r {{Param.LocationToRemap}}/assets/requirements.txt
-mkdir -p {{Param.LocationToRemap}}/output
-
-# Create .venv symlinks in libraries so library code that expects its own
-# venv (e.g. _get_library_env_python) finds a working Python with all deps.
-SESSION_PYTHON=$(which python)
-for lib_dir in {{Param.LocationToRemap}}/assets/libraries/*/; do
-    if [ -f "${lib_dir}griptape-nodes-library.json" ] || [ -f "${lib_dir}griptape-nodes-library-cuda129.json" ]; then
-        mkdir -p "${lib_dir}.venv/bin"
-        ln -sf "$SESSION_PYTHON" "${lib_dir}.venv/bin/python"
-        echo "Created .venv symlink in ${lib_dir}"
-    fi
-done
-
-echo 'Virtual environment setup complete.'
-"""
+        venv_script = build_venv_script()
 
         # Create job template with parameterSpace for multi-task execution
         job_template: dict[str, Any] = {
