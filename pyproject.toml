@@ -72,6 +72,10 @@ exclude = [
   "D103",   # test functions do not need docstrings
   "S108",   # hardcoded /tmp paths in fixtures are fine
   "INP001", # tests are not an importable package
+  "D104",   # test package __init__ files are empty
+]
+"scripts/**" = [
+  "INP001", # scripts run as files, not as a package
 ]
 
 [tool.ruff.lint.isort]
