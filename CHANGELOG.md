@@ -10,4 +10,4 @@ the `library_version` in `griptape_nodes_library_deadline_cloud/griptape-nodes-l
 
 <!-- Entries go in changelog.d/, one file each. See changelog.d/README.md. -->
 
-[Unreleased]: https://github.com/griptape-ai/griptape-nodes-library-deadline-cloud/compare/v0.68.0...HEAD
+[Unreleased]: https://github.com/griptape-ai/griptape-nodes-library-deadline-cloud/compare/3b71cd6c0733cd49af38fa2a6768aa104e1af179...HEAD
