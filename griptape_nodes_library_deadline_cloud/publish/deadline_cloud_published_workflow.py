@@ -35,7 +35,12 @@ from publish.parameters.deadline_cloud_job_submission_config_advanced_parameter 
     DeadlineCloudJobSubmissionConfigAdvancedParameter,
 )
 from publish.parameters.deadline_cloud_job_submission_config_parameter import DeadlineCloudJobSubmissionConfigParameter
-from publish.utils import collect_metadata_sidecars, ensure_conda_package, write_sidecar_output_files
+from publish.utils import (
+    collect_metadata_sidecars,
+    ensure_conda_package,
+    parent_run_id_job_parameters,
+    write_sidecar_output_files,
+)
 
 if TYPE_CHECKING:
     from deadline.job_attachments.models import StorageProfile
@@ -857,6 +862,10 @@ class DeadlineCloudPublishedWorkflow(SuccessFailureNode, BaseDeadlineCloud):
                     "string": self._ensure_conda_uv(self._ensure_conda_git(self.get_parameter_value("conda_packages")))
                 },
             }
+
+            # Name this run so the job's spend counts toward it, if the published template takes it.
+            run = self.run_attribution
+            job_parameters.update(parent_run_id_job_parameters(job_template, run.run_id if run is not None else None))
 
             job_template = self._reconcile_job_template(job_template)
             job_id = self._submit_job_with_attachments(

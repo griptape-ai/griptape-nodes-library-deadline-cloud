@@ -705,6 +705,9 @@ class DeadlineCloudMultiTaskGroup(SubflowNodeGroup, BaseNodeGroup):
             host_requirements=host_requirements,
             result_parameter_name=result_parameter_name,
             group_node_names=group_node_names,
+            # A group's own body runs without `run_attribution`, so read the run in progress from the
+            # engine, as the engine does for a group it runs in a subprocess.
+            parent_run_id=GriptapeNodes.FlowManager().spend_run_id,
         )
 
         # Create and execute the multi-task publisher

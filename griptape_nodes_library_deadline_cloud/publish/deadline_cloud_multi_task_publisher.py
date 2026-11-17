@@ -36,6 +36,7 @@ from publish.deadline_cloud_publisher import DeadlineCloudPublisher
 from publish.utils import (
     collect_metadata_sidecars,
     collect_pip_install_flags,
+    parent_run_id_job_parameters,
     write_library_deps,
     write_sidecar_output_files,
 )
@@ -69,6 +70,8 @@ class MultiTaskPublisherConfig:
     host_requirements: dict[str, Any] | None = None
     result_parameter_name: str | None = None
     group_node_names: list[str] | None = None
+    # The run of the engine that submits the job, which the job's spend counts toward.
+    parent_run_id: str | None = None
 
 
 class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
@@ -677,6 +680,7 @@ class DeadlineCloudMultiTaskPublisher(DeadlineCloudPublisher):
                 "string": self._multi_task_config.workflow_name.replace(" ", "_"),
             },
         }
+        job_parameters.update(parent_run_id_job_parameters(job_template, self._multi_task_config.parent_run_id))
 
         # Build create job request
         create_job_request: dict[str, Any] = {

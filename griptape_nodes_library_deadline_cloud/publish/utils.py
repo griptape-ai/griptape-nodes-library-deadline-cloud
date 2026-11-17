@@ -25,6 +25,31 @@ logger = logging.getLogger(__name__)
 # The situation name that defines where metadata sidecars are saved.
 METADATA_SITUATION_NAME = "save_griptape_nodes_metadata"
 
+# The job parameter naming the run of the engine that submitted the job, so the workflow's spend counts
+# toward that run. A job template published before this parameter existed doesn't define it, and Open
+# Job Description refuses a job that sets a parameter its template doesn't define.
+PARENT_RUN_ID_PARAMETER = "ParentRunId"
+
+
+def parent_run_id_parameter_definition() -> dict[str, Any]:
+    """The job template's definition of the parent run id; empty when the job names no parent run."""
+    return {
+        "name": PARENT_RUN_ID_PARAMETER,
+        "type": "STRING",
+        "description": "Run id of the engine that submitted this job; the workflow's spend counts toward it",
+        "default": "",
+    }
+
+
+def parent_run_id_job_parameters(job_template: dict[str, Any], parent_run_id: str | None) -> dict[str, Any]:
+    """The job parameters naming `parent_run_id`, or none when there is no run or `job_template` can't take it."""
+    if parent_run_id is None:
+        return {}
+    defined = {definition.get("name") for definition in job_template.get("parameterDefinitions", [])}
+    if PARENT_RUN_ID_PARAMETER not in defined:
+        return {}
+    return {PARENT_RUN_ID_PARAMETER: {"string": parent_run_id}}
+
 
 def write_library_deps(req_file: TextIO, deps: Dependencies) -> None:
     """Write a library's pip_dependencies into a requirements.txt file handle.

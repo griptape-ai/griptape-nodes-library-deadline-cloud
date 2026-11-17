@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from publish.utils import build_venv_script
+from publish.utils import build_venv_script, parent_run_id_parameter_definition
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -101,6 +101,8 @@ class DeadlineCloudJobTemplateGenerator:
             }
         )
 
+        parameter_definitions.append(parent_run_id_parameter_definition())
+
         # Generate Python execution script
         python_script = DeadlineCloudJobTemplateGenerator._generate_python_execution_script(
             library_paths, pickle_control_flow_result=pickle_control_flow_result
@@ -181,6 +183,7 @@ logger.setLevel(logging.INFO)
 location_to_remap = r"{{{{Param.LocationToRemap}}}}"
 models_location_to_remap = r"{{{{Param.ModelsLocationToRemap}}}}"
 output_dir_subdirectory = r"{{{{Param.OutputDir}}}}"
+parent_run_id = r"{{{{Param.ParentRunId}}}}" or None
 
 job_assets_dir = Path(location_to_remap) / "assets"
 output_dir = Path(location_to_remap) / "output" / output_dir_subdirectory
@@ -297,6 +300,7 @@ if __name__ == "__main__":
         storage_backend=StorageBackend("local"),
         project_file_path=project_file_path if project_file_path.exists() else None,
         skip_library_loading=True,
+        parent_run_id=parent_run_id,
     )
     execute_workflow(
         input=flow_input,
