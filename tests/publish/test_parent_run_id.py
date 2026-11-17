@@ -198,9 +198,10 @@ def _run_worker_script(
     )
 
     env = {key: value for key, value in os.environ.items() if not key.startswith("GTN_")}
-    # Keep the engine's user config and data, which starting it writes, out of the developer's own.
+    # Keep the engine's user config, data and logs, which starting it writes, out of the developer's own.
     env["XDG_CONFIG_HOME"] = str(tmp_path / "config")
     env["XDG_DATA_HOME"] = str(tmp_path / "data")
+    env["XDG_STATE_HOME"] = str(tmp_path / "state")
     completed = subprocess.run(  # noqa: S603
         [sys.executable, str(script_path)],
         cwd=tmp_path,
