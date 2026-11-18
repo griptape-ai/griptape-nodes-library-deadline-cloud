@@ -229,14 +229,13 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         if self._workflow_nodes is not None:
             return self._workflow_nodes
 
-        flow_manager = GriptapeNodes.FlowManager()
-        get_top_level_flow_result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        get_top_level_flow_result = GriptapeNodes.handle_request(GetTopLevelFlowRequest())
         if not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess):
             details = f"Failed to get top-level flow for workflow '{self._workflow_name}'."
             logger.error(details)
             raise TypeError(details)
 
-        list_nodes_in_flow_result = flow_manager.on_list_nodes_in_flow_request(
+        list_nodes_in_flow_result = GriptapeNodes.handle_request(
             ListNodesInFlowRequest(flow_name=get_top_level_flow_result.flow_name)
         )
         if not isinstance(list_nodes_in_flow_result, ListNodesInFlowResultSuccess):
@@ -269,10 +268,9 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
 
     def _get_model_parameters_for_node(self, node: BaseNode, huggingface_repo_names: list[str]) -> list[str]:
         models: list[str] = []
-        node_manager = GriptapeNodes.NodeManager()
 
         for param in node.parameters:
-            get_param_value_result = node_manager.on_get_parameter_value_request(
+            get_param_value_result = GriptapeNodes.handle_request(
                 GetParameterValueRequest(parameter_name=param.name, node_name=node.name)
             )
             if not isinstance(get_param_value_result, GetParameterValueResultSuccess):
@@ -506,8 +504,6 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
         """Extracts the Deadline Cloud Start Flow input parameters from the workflow."""
         workflow_input: dict[str, Any] = {"Deadline Cloud Start Flow": {}}
 
-        node_manager = GriptapeNodes.NodeManager()
-
         # Gather input parameters from the workflow shape
         for node_name, params in workflow_shape.get("input", {}).items():
             for param_name in params:
@@ -515,7 +511,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
                     node_name=node_name,
                     parameter_name=param_name,
                 )
-                result = node_manager.on_get_parameter_value_request(request=request)
+                result = GriptapeNodes.handle_request(request)
                 if isinstance(result, GetParameterValueResultSuccess):
                     workflow_input["Deadline Cloud Start Flow"][param_name] = result.value
 
@@ -1251,8 +1247,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
     def _get_deadline_cloud_start_flow_node_commands(
         self, unique_parameter_uuid_to_values: dict
     ) -> SerializeNodeToCommandsResultSuccess | None:
-        flow_manager = GriptapeNodes.FlowManager()
-        result = flow_manager.on_get_top_level_flow_request(GetTopLevelFlowRequest())
+        result = GriptapeNodes.handle_request(GetTopLevelFlowRequest())
         if result.failed():
             details = f"Workflow '{self._workflow_name}' does not have a top-level flow."
             raise ValueError(details)
@@ -1261,7 +1256,7 @@ class DeadlineCloudPublisher(BaseDeadlineCloud):
             details = f"Workflow '{self._workflow_name}' does not have a top-level flow."
             raise ValueError(details)
 
-        control_flow = flow_manager.get_flow_by_name(flow_name)
+        control_flow = GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
         nodes = control_flow.nodes
 
         dc_start_node: DeadlineCloudStartFlow | None = None
